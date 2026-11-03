@@ -4,6 +4,9 @@ Camelot : mineur = <n>A, majeur = <n>B. La roue suit les quintes.
 Indexé par pitch class (C=0 … B=11).
 """
 
+import re
+
+_CAMELOT_RE = re.compile(r"^(?:[1-9]|1[0-2])[AB]$")
 _NOTE_SEMITONES = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 _ACCIDENTALS = {"#": 1, "♯": 1, "b": -1, "♭": -1}
 _MAJOR_NUMBER = {0: 8, 7: 9, 2: 10, 9: 11, 4: 12, 11: 1, 6: 2, 1: 3, 8: 4, 3: 5, 10: 6, 5: 7}
@@ -39,6 +42,9 @@ def to_camelot(rb_key: str | None) -> str | None:
     """
     if not rb_key:
         return None
+    # Rekordbox peut déjà stocker la clé en Camelot ("7A") : on la renvoie telle quelle.
+    if _CAMELOT_RE.match(rb_key.strip().upper()):
+        return rb_key.strip().upper()
     parsed = _parse(rb_key)
     if parsed is None:
         return None

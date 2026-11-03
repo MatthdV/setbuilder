@@ -55,6 +55,16 @@ def test_to_camelot(rb_key, expected):
     assert to_camelot(rb_key) == expected
 
 
-@pytest.mark.parametrize("rb_key", ["H", "Xm", "Cmaj7", "  ", "C#b", "12A"])
+@pytest.mark.parametrize("rb_key", ["H", "Xm", "Cmaj7", "  ", "C#b", "13A"])
 def test_to_camelot_unknown_returns_none(rb_key):
     assert to_camelot(rb_key) is None
+
+
+@pytest.mark.parametrize("key", ["1A", "7A", "12B", "10b"])
+def test_already_camelot_passthrough(key):
+    assert to_camelot(key) == key.upper()
+
+
+@pytest.mark.parametrize("key", ["13A", "0B", "7C"])
+def test_invalid_camelot_like_is_none(key):
+    assert to_camelot(key) is None
