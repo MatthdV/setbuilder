@@ -9,6 +9,9 @@ description = "Outil perso de préparation de sets DJ sur la librairie Rekordbox
 requires-python = ">=3.12"
 dependencies = []
 
+[project.optional-dependencies]
+rekordbox = ["pyrekordbox==0.4.4"]
+
 [dependency-groups]
 dev = ["pytest"]
 

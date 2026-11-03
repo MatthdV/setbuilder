@@ -59,6 +59,9 @@ def map_content(row) -> Track:
     rb_key = _raw_key(row)
     tags = _my_tags(row)
     length = _get(row, "Length")
+    genre = _get(row, "GenreName", "Genre")
+    if not isinstance(genre, str):  # relation ORM non résolue : jamais dans un bind SQL
+        genre = None
     return Track(
         content_id=str(row.ID),
         title=_get(row, "Title"),
@@ -69,7 +72,7 @@ def map_content(row) -> Track:
         rb_key=rb_key,
         moment=tags.get("moment"),
         ambiance=tags.get("ambiance"),
-        genre=_get(row, "GenreName", "Genre"),
+        genre=genre,
         file_path=_get(row, "FolderPath"),
         duration_s=int(length) if length else None,
         has_cues=1 if getattr(row, "Cues", None) else 0,

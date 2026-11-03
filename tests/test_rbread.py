@@ -41,6 +41,15 @@ def test_map_content_full():
     assert t.has_cues == 1
 
 
+def test_map_content_non_string_genre_fallback_is_none():
+    row = NS(ID=1, GenreName=None, Genre=NS(Name="rel-object"))
+    assert map_content(row).genre is None
+
+
+def test_map_content_string_genre_fallback_kept():
+    assert map_content(NS(ID=1, GenreName=None, Genre="Techno")).genre == "Techno"
+
+
 def test_read_library_iterates_db():
     db = NS(get_content=lambda: [NS(ID=1), NS(ID=2)])
     assert [t.content_id for t in read_library(db)] == ["1", "2"]
