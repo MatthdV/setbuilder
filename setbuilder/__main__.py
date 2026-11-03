@@ -13,7 +13,7 @@ DEFAULT_CACHE = "setbuilder.db"
 
 
 def rekordbox_running() -> bool:
-    """True si le process Rekordbox tourne (pgrep -x rekordbox)."""
+    """True si le process Rekordbox tourne (pgrep -xi rekordbox, insensible à la casse)."""
     result = subprocess.run(["pgrep", "-xi", "rekordbox"], capture_output=True)
     return result.returncode == 0
 

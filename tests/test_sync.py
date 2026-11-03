@@ -29,7 +29,7 @@ def test_sync_inserts_then_idempotent(tmp_path):
     assert statuses == {"1": "ok", "2": "missing"}
 
     stats = sync(tracks, cache)
-    assert stats.inserted == 0
+    assert stats == SyncStats(inserted=0, updated=0, missing_files=1)
     assert cache.execute("SELECT COUNT(*) FROM tracks").fetchone()[0] == 2
 
 
@@ -38,7 +38,7 @@ def test_sync_updates_changed_field(tmp_path):
     sync(tracks, cache)
     changed = [replace(tracks[0], bpm=130.0), tracks[1]]
     stats = sync(changed, cache)
-    assert stats.updated >= 1 and stats.inserted == 0
+    assert stats == SyncStats(inserted=0, updated=1, missing_files=1)
     bpm = cache.execute("SELECT bpm FROM tracks WHERE content_id='1'").fetchone()[0]
     assert bpm == 130.0
 
