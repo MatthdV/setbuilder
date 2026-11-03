@@ -1,0 +1,10 @@
+.superpowers/
+.venv/
+__pycache__/
+*.pyc
+setbuilder.db
+*.db
+.DS_Store
+.pytest_cache/
+dist/
+*.egg-info/
