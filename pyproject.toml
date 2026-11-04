@@ -11,6 +11,17 @@ dependencies = []
 
 [project.optional-dependencies]
 rekordbox = ["pyrekordbox==0.4.4"]
+# Modèles ML. Pins transformers/tokenizers OBLIGATOIRES : MuQ casse avec transformers 5.x.
+analysis = [
+    "essentia-tensorflow==2.1b6.dev1389",
+    "torch",
+    "muq==0.1.0",
+    "transformers==4.44.2",
+    "tokenizers==0.19.1",
+    "umap-learn",
+    "soundfile",
+    "numpy",
+]
 
 [dependency-groups]
 dev = [
