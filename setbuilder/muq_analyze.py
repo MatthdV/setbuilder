@@ -8,12 +8,14 @@ import os
 
 import numpy as np
 
+from setbuilder.errors import AnalysisUnavailableError
+
 MODEL_ID = "OpenMuQ/MuQ-large-msd-iter"
 MUQ_SR = 24000          # MuQ attend du 24 kHz (l'audio d'analyse est en 16 kHz)
 SEGMENT_SECONDS = 60    # borne la mémoire sur les longs morceaux
 
 
-class MuQUnavailableError(RuntimeError):
+class MuQUnavailableError(AnalysisUnavailableError):
     """MuQ / poids HF indisponibles (extra absent, ou hors-ligne au premier run)."""
 
 

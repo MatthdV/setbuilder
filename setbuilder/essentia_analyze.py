@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from setbuilder.energy import energy_score
+from setbuilder.errors import AnalysisUnavailableError
 
 MAX_GENRES = 5
 BASE_URL = "https://essentia.upf.edu/models/"
@@ -32,7 +33,7 @@ for _m in _MOODS:
         _MODEL_PATHS[f"mood_{_m}-discogs-effnet-1.{_ext}"] = f"classification-heads/mood_{_m}/"
 
 
-class ModelUnavailableError(RuntimeError):
+class ModelUnavailableError(AnalysisUnavailableError):
     """Modèle Essentia introuvable et non téléchargeable (hors-ligne au premier run)."""
 
 

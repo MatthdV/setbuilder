@@ -1,0 +1,104 @@
+"""Batch d'analyse incrémental : features Essentia + embedding MuQ + carte UMAP."""
+
+import sqlite3
+from dataclasses import dataclass
+from typing import Callable
+
+import numpy as np
+
+from setbuilder.audio import load_audio_16k_mono
+from setbuilder.energy import ENERGY_FORMULA_VERSION
+from setbuilder.errors import AnalysisUnavailableError
+from setbuilder.essentia_analyze import to_cache_dict
+from setbuilder.features_cache import has_features, open_features, upsert_features
+from setbuilder.galaxy import UMAP_VERSION, fit_umap
+
+# change si un modèle ou la formule change -> force la ré-analyse
+ANALYSIS_VERSION = f"effnet-discogs400+muq-large-msd-iter+{ENERGY_FORMULA_VERSION}"
+
+
+@dataclass
+class Analyzers:
+    """Briques d'analyse injectables (les vraies sont câblées par le CLI)."""
+
+    essentia: Callable
+    muq: Callable
+    load_audio: Callable = load_audio_16k_mono
+
+
+@dataclass
+class AnalyzeStats:
+    analyzed: int = 0
+    skipped: int = 0
+    missing: int = 0
+    failed: int = 0
+
+
+def run_analyze(
+    cache: sqlite3.Connection,
+    *,
+    analyzers: Analyzers,
+    analysis_version: str = ANALYSIS_VERSION,
+    progress: Callable[[int, int, AnalyzeStats], None] | None = None,
+) -> AnalyzeStats:
+    """Analyse les tracks sans features à jour ; puis recalcule la carte UMAP si besoin.
+
+    Un track dont le fichier est introuvable ou dont l'analyse échoue n'interrompt pas le batch.
+    Seule `AnalysisUnavailableError` (modèles indisponibles) l'arrête.
+    """
+    open_features(cache)
+    rows = cache.execute("SELECT content_id, file_path FROM tracks ORDER BY content_id").fetchall()
+    stats = AnalyzeStats()
+
+    for i, (content_id, file_path) in enumerate(rows, 1):
+        if has_features(cache, content_id, analysis_version):
+            stats.skipped += 1
+        else:
+            audio = analyzers.load_audio(file_path) if file_path else None
+            if audio is None or len(audio) == 0:
+                stats.missing += 1
+            else:
+                try:
+                    feats = analyzers.essentia(audio)
+                    emb = analyzers.muq(audio)
+                    if emb is None or not np.isfinite(emb).all():
+                        raise ValueError("embedding MuQ vide ou non fini")
+                    upsert_features(cache, content_id, {
+                        **to_cache_dict(feats),
+                        "muq_embedding": emb,
+                        "analysis_version": analysis_version,
+                    })
+                    stats.analyzed += 1
+                except AnalysisUnavailableError:
+                    raise
+                except Exception:  # noqa: BLE001 - un track KO ne doit pas tuer le batch
+                    stats.failed += 1
+        if progress:
+            progress(i, len(rows), stats)
+
+    _refresh_galaxy(cache, analysis_version, force=stats.analyzed > 0)
+    return stats
+
+
+def _refresh_galaxy(cache: sqlite3.Connection, analysis_version: str, *, force: bool) -> None:
+    ids, embs = [], []
+    for cid, blob in cache.execute(
+        "SELECT content_id, muq_embedding FROM features "
+        "WHERE analysis_version = ? AND muq_embedding IS NOT NULL ORDER BY content_id",
+        (analysis_version,),
+    ):
+        ids.append(cid)
+        embs.append(np.frombuffer(blob, dtype=np.float32))
+    if not ids:
+        return
+    have = cache.execute("SELECT COUNT(*) FROM galaxy WHERE umap_version = ?", (UMAP_VERSION,)).fetchone()[0]
+    if not force and have == len(ids):
+        return
+    coords = fit_umap(np.stack(embs))
+    cache.executemany(
+        "INSERT INTO galaxy (content_id, umap_x, umap_y, umap_version) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(content_id) DO UPDATE SET umap_x=excluded.umap_x, umap_y=excluded.umap_y, "
+        "umap_version=excluded.umap_version",
+        [(cid, float(x), float(y), UMAP_VERSION) for cid, (x, y) in zip(ids, coords)],
+    )
+    cache.commit()
