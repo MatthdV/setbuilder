@@ -38,8 +38,7 @@ def split_segments(audio: np.ndarray, seg_len: int, min_len: int) -> list[np.nda
     if len(segs) > 1 and len(segs[-1]) < min_len:
         last = segs.pop()
         segs[-1] = np.concatenate([segs[-1], last])
-    return [s for s in segs if len(s) >= min_len] if len(segs) > 1 else (
-        segs if len(segs[0]) >= min_len else [])
+    return [s for s in segs if len(s) >= min_len]
 
 
 _model = None
@@ -72,10 +71,10 @@ def _load():
 
 def analyze_muq(audio: np.ndarray) -> np.ndarray | None:
     """Embedding (1024,) d'un signal 16 kHz mono, ou None si trop court / non fini."""
+    model, device = _load()  # d'abord : message clair si torch/muq absents
     import torch
     from scipy.signal import resample_poly
 
-    model, device = _load()
     wav = resample_poly(audio, 3, 2).astype(np.float32)  # 16 kHz -> 24 kHz
     frames = []
     with torch.no_grad():
