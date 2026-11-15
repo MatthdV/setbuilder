@@ -7,7 +7,10 @@ name = "setbuilder"
 version = "0.1.0"
 description = "Outil perso de préparation de sets DJ sur la librairie Rekordbox"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+]
 
 [project.optional-dependencies]
 rekordbox = ["pyrekordbox==0.4.4"]
@@ -30,6 +33,7 @@ dev = [
     "scipy>=1.18.1",
     "soundfile>=0.14.0",
     "umap-learn>=0.5.12",
+    "httpx>=0.28.0",
 ]
 
 [tool.pytest.ini_options]
