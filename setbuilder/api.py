@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from setbuilder.export import backup_db, export_set
 from setbuilder.features_cache import open_features
 from setbuilder.impact import ImpactReport, forced_impact
 from setbuilder.scoring import Candidate, ScoreBreakdown
@@ -95,7 +96,19 @@ def _require_set(conn: sqlite3.Connection, set_id: str) -> SetRecord:
     return rec
 
 
-def create_app(db_path: str) -> FastAPI:
+def _default_rb_provider():
+    """Ouvre la vraie base Rekordbox (extra `rekordbox`). Import paresseux :
+    ImportError si l'extra n'est pas installe -> l'endpoint repond 503.
+    Retourne (db, db_directory) ; db_directory sert au backup auto.
+    """
+    from pyrekordbox import Rekordbox6Database  # noqa: PLC0415
+
+    db = Rekordbox6Database()
+    return db, db.db_directory
+
+
+def create_app(db_path: str, *, rb_provider=None) -> FastAPI:
+    rb_provider = rb_provider or _default_rb_provider
     app = FastAPI(title="setbuilder")
     app.add_middleware(
         CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
@@ -187,5 +200,31 @@ def create_app(db_path: str) -> FastAPI:
         place_track(conn, set_id, pos, body.content_id, is_forced=True)
         slot = _serialize_set(conn, _require_set(conn, set_id))["slots"][pos]
         return {"slot": slot, "impact": _serialize_impact(report)}
+
+    @app.post("/sets/{set_id}/export")
+    def export_rekordbox(set_id: str):
+        rec = _require_set(conn, set_id)
+        content_ids = [s.content_id for s in rec.slots if s.content_id]
+        if not content_ids:
+            raise HTTPException(status_code=400, detail="set vide : aucun morceau a exporter")
+
+        try:
+            db, db_dir = rb_provider()
+        except ImportError as e:
+            raise HTTPException(
+                status_code=503,
+                detail="extra `rekordbox` absent : `uv sync --extra rekordbox`",
+            ) from e
+
+        # Backup AVANT toute ecriture ; si le backup echoue on n'ecrit pas.
+        backup_dir = backup_db(db_dir, "backups")
+        try:
+            result = export_set(db, rec.name, content_ids)
+        except Exception as e:  # verrou master.db (Rekordbox ouvert) ou IO
+            raise HTTPException(
+                status_code=409, detail="ferme Rekordbox et reessaie"
+            ) from e
+        result["backup"] = backup_dir
+        return result
 
     return app
