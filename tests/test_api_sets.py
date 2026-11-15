@@ -50,3 +50,19 @@ def test_library_and_galaxy_endpoints(tmp_path):
     client = _client(tmp_path)
     assert client.get("/library").json() == []
     assert client.get("/galaxy").json() == []
+
+
+def test_app_self_initialises_set_tables(tmp_path):
+    # base avec seulement `tracks` (pas d'open_sets/open_features) : l'app doit
+    # créer les tables manquantes elle-même, sinon POST /sets casse.
+    db = tmp_path / "bare.db"
+    c = sqlite3.connect(str(db))
+    c.execute("CREATE TABLE tracks (content_id TEXT PRIMARY KEY, title TEXT, artist TEXT, "
+              "bpm REAL, camelot TEXT, moment TEXT, ambiance TEXT, genre TEXT, duration_s REAL)")
+    c.commit()
+    c.close()
+    client = TestClient(create_app(str(db)))
+    r = client.post("/sets", json={"name": "x", "mode": "count", "target": 2,
+                                   "curve_points": [[0, 5]], "n_slots": 2})
+    assert r.status_code == 200
+    assert client.get("/galaxy").json() == []

@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from setbuilder.features_cache import open_features
 from setbuilder.impact import ImpactReport, forced_impact
 from setbuilder.scoring import Candidate, ScoreBreakdown
 from setbuilder.sets_repo import (
@@ -22,6 +23,7 @@ from setbuilder.sets_repo import (
     delete_set,
     get_set,
     list_sets,
+    open_sets,
     place_track,
 )
 from setbuilder.slot_context import build_slot_context, candidates_by_id
@@ -99,6 +101,10 @@ def create_app(db_path: str) -> FastAPI:
         CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
     )
     conn = sqlite3.connect(db_path, check_same_thread=False)
+    # Garantit que les tables du moteur existent, même sur une base ouverte
+    # directement (les tables `tracks` viennent de cache.open_cache côté lib).
+    open_features(conn)  # features + galaxy
+    open_sets(conn)      # sets + set_slots
     app.state.conn = conn
 
     @app.get("/library")
