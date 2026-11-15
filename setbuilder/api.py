@@ -8,10 +8,15 @@ routes délèguent aux couches métier (sets_repo, suggest, impact) et lisent
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+_WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 from setbuilder.export import backup_db, export_set
 from setbuilder.features_cache import open_features
@@ -119,6 +124,14 @@ def create_app(db_path: str, *, rb_provider=None) -> FastAPI:
     open_features(conn)  # features + galaxy
     open_sets(conn)      # sets + set_slots
     app.state.conn = conn
+
+    # Frontend statique (plan 5) : index.html a la racine, assets sous /static.
+    if _WEB_DIR.is_dir():
+        app.mount("/static", StaticFiles(directory=str(_WEB_DIR)), name="static")
+
+        @app.get("/")
+        def index():
+            return FileResponse(str(_WEB_DIR / "index.html"))
 
     @app.get("/library")
     def library():

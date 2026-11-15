@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>setbuilder</title>
+  <link rel="stylesheet" href="/static/tokens.css" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <div class="app">
+
+    <section id="zone-header" class="zone">
+      <h2>Set</h2>
+      <div class="header-row">
+        <div class="field"><label>Nom</label><input id="f-name" class="wide" value="Nouveau set" /></div>
+        <div class="field"><label>Mode</label>
+          <select id="f-mode"><option value="count">nombre</option><option value="duration">durée</option></select>
+        </div>
+        <div class="field"><label>Cible</label><input id="f-target" type="number" value="12" /></div>
+        <div class="field"><label>Slots</label><input id="f-slots" type="number" value="12" /></div>
+        <div class="field"><label>&nbsp;</label><button id="btn-create" class="primary">Créer</button></div>
+        <div class="field"><label>Sets</label>
+          <select id="f-existing"><option value="">— charger —</option></select>
+        </div>
+      </div>
+
+      <div class="lib">
+        <input id="lib-search" class="lib-search" placeholder="Filtrer la librairie (titre, artiste, genre)…" />
+        <div id="lib-list" class="lib-list"></div>
+      </div>
+
+      <div class="export-row">
+        <button id="btn-export" class="primary">Exporter vers Rekordbox</button>
+        <span class="meta" style="color:var(--text-faint)">Rekordbox doit être fermé.</span>
+      </div>
+    </section>
+
+    <section id="zone-curve" class="zone">
+      <h2>Courbe d'énergie</h2>
+      <svg id="curve-svg" viewBox="0 0 600 160" preserveAspectRatio="none"></svg>
+      <div id="curve-alert" class="alert"></div>
+    </section>
+
+    <section id="zone-timeline" class="zone">
+      <h2>Timeline</h2>
+      <div id="timeline" class="timeline"></div>
+    </section>
+
+    <section id="zone-suggest" class="zone">
+      <h2>Suggestions — slot <span id="sel-pos">—</span></h2>
+      <div id="sugg-list"></div>
+      <div class="force-row">
+        <input id="force-cid" placeholder="content_id à forcer hors suggestions" />
+        <button id="btn-force">Forcer</button>
+      </div>
+      <div id="impact" class="impact"></div>
+    </section>
+
+    <section id="zone-galaxy" class="zone">
+      <h2>Galaxy</h2>
+      <canvas id="galaxy-canvas" width="360" height="340"></canvas>
+      <div id="galaxy-empty" class="galaxy-empty" style="display:none">Librairie non analysée — lance le batch d'analyse.</div>
+    </section>
+
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="/static/curve.js"></script>
+  <script src="/static/timeline.js"></script>
+  <script src="/static/suggestions.js"></script>
+  <script src="/static/galaxy.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
