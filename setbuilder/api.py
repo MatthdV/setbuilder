@@ -13,6 +13,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from setbuilder.impact import ImpactReport, forced_impact
+from setbuilder.scoring import Candidate, ScoreBreakdown
 from setbuilder.sets_repo import (
     SetRecord,
     clear_slot,
@@ -22,7 +24,31 @@ from setbuilder.sets_repo import (
     list_sets,
     place_track,
 )
+from setbuilder.slot_context import build_slot_context, candidates_by_id
+from setbuilder.suggest import suggestions_for_slot
 from setbuilder.timeline import slot_start_times
+
+
+class ForceBody(BaseModel):
+    content_id: str
+
+
+def _serialize_breakdown(b: ScoreBreakdown) -> dict:
+    return {"content_id": b.content_id, "score": b.score,
+            "dimensions": {k: [label, score] for k, (label, score) in b.dimensions.items()}}
+
+
+def _serialize_impact(r: ImpactReport) -> dict:
+    return {"energy": list(r.energy), "key_prev": list(r.key_prev),
+            "key_next": list(r.key_next), "bpm_prev": list(r.bpm_prev),
+            "warnings": r.warnings}
+
+
+def _next_filled(rec: SetRecord, pos: int, by_id: dict[str, Candidate]) -> Candidate | None:
+    for s in rec.slots[pos + 1:]:
+        if s.content_id and s.content_id in by_id:
+            return by_id[s.content_id]
+    return None
 
 
 class SetCreate(BaseModel):
@@ -131,5 +157,29 @@ def create_app(db_path: str) -> FastAPI:
             raise HTTPException(status_code=404, detail="slot hors bornes")
         clear_slot(conn, set_id, pos)
         return {"ok": True}
+
+    @app.get("/sets/{set_id}/slots/{pos}/suggestions")
+    def slot_suggestions(set_id: str, pos: int, limit: int = 20):
+        rec = _require_set(conn, set_id)
+        if not 0 <= pos < len(rec.slots):
+            raise HTTPException(status_code=404, detail="slot hors bornes")
+        return [_serialize_breakdown(b) for b in suggestions_for_slot(conn, rec, pos, limit=limit)]
+
+    @app.post("/sets/{set_id}/slots/{pos}/force")
+    def force_slot(set_id: str, pos: int, body: ForceBody):
+        rec = _require_set(conn, set_id)
+        if not 0 <= pos < len(rec.slots):
+            raise HTTPException(status_code=404, detail="slot hors bornes")
+        by_id = candidates_by_id(conn, rec.analysis_version)
+        forced = by_id.get(body.content_id)
+        if forced is None:
+            raise HTTPException(status_code=404, detail="morceau introuvable dans la lib")
+        durations = _durations(conn, rec)
+        ctx = build_slot_context(rec, pos, by_id, durations)
+        next_ = _next_filled(rec, pos, by_id)
+        report = forced_impact(forced, ctx.prev, next_, ctx.target_energy)
+        place_track(conn, set_id, pos, body.content_id, is_forced=True)
+        slot = _serialize_set(conn, _require_set(conn, set_id))["slots"][pos]
+        return {"slot": slot, "impact": _serialize_impact(report)}
 
     return app
