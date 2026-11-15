@@ -32,6 +32,32 @@ def test_export_empty_rejected():
         export_set(_FakeDB(), "x", [])
 
 
+class _FailingDB:
+    def __init__(self):
+        self.rolled_back = False
+        self.committed = False
+
+    def create_playlist(self, name, **kw):
+        return {"name": name}
+
+    def add_to_playlist(self, pl, cid):
+        raise RuntimeError("database is locked")
+
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        self.rolled_back = True
+
+
+def test_export_rolls_back_on_failure():
+    db = _FailingDB()
+    with pytest.raises(RuntimeError):
+        export_set(db, "x", ["a", "b"])
+    assert db.rolled_back is True
+    assert db.committed is False
+
+
 def test_backup_copies_master_db(tmp_path):
     src = tmp_path / "rb"
     src.mkdir()

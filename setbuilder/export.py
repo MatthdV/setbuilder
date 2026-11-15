@@ -46,8 +46,20 @@ def export_set(db, name: str, content_ids: list[str]) -> dict:
         raise ValueError("content_ids vide : rien a exporter")
 
     pl = db.create_playlist(name)
-    for cid in content_ids:
-        db.add_to_playlist(pl, cid)
-    db.commit()
+    try:
+        for cid in content_ids:
+            db.add_to_playlist(pl, cid)
+        db.commit()
+    except Exception:
+        # Pas de playlist a moitie ecrite : on annule la transaction en cours
+        # (le commit est le seul point de persistance). Un retry ne cree donc
+        # pas de doublon. rollback() optionnel (duck-typing).
+        rollback = getattr(db, "rollback", None)
+        if callable(rollback):
+            try:
+                rollback()
+            except Exception:
+                pass
+        raise
 
     return {"playlist": name, "n_tracks": len(content_ids)}

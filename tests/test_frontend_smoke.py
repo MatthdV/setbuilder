@@ -56,7 +56,7 @@ def _client(tmp_path, fake):
     rbdir = tmp_path / "rb"
     rbdir.mkdir()
     (rbdir / "master.db").write_text("DB")
-    return TestClient(create_app(str(db), rb_provider=lambda: (fake, str(rbdir))))
+    return TestClient(create_app(str(db), rb_provider=lambda: (str(rbdir), lambda: fake)))
 
 
 def test_index_and_assets_served(tmp_path):

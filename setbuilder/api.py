@@ -102,14 +102,23 @@ def _require_set(conn: sqlite3.Connection, set_id: str) -> SetRecord:
 
 
 def _default_rb_provider():
-    """Ouvre la vraie base Rekordbox (extra `rekordbox`). Import paresseux :
-    ImportError si l'extra n'est pas installe -> l'endpoint repond 503.
-    Retourne (db, db_directory) ; db_directory sert au backup auto.
+    """Localise la base Rekordbox SANS l'ouvrir (extra `rekordbox`).
+
+    Retourne (db_directory, open_db) : le backup se fait sur `db_directory`
+    AVANT que `open_db()` ne construise la base — aucune ouverture de la vraie
+    base avant le backup. Import paresseux : ImportError -> l'endpoint 503.
     """
     from pyrekordbox import Rekordbox6Database  # noqa: PLC0415
+    from pyrekordbox.config import get_config  # noqa: PLC0415
 
-    db = Rekordbox6Database()
-    return db, db.db_directory
+    db_dir = get_config("rekordbox6", "db_dir")
+    if not db_dir:
+        db_dir = Path.home() / "Library" / "Pioneer" / "rekordbox"
+    return str(db_dir), Rekordbox6Database
+
+
+def _is_lock_error(exc: Exception) -> bool:
+    return "lock" in str(exc).lower()
 
 
 def create_app(db_path: str, *, rb_provider=None) -> FastAPI:
@@ -222,21 +231,34 @@ def create_app(db_path: str, *, rb_provider=None) -> FastAPI:
             raise HTTPException(status_code=400, detail="set vide : aucun morceau a exporter")
 
         try:
-            db, db_dir = rb_provider()
+            db_dir, open_db = rb_provider()
         except ImportError as e:
             raise HTTPException(
                 status_code=503,
                 detail="extra `rekordbox` absent : `uv sync --extra rekordbox`",
             ) from e
 
-        # Backup AVANT toute ecriture ; si le backup echoue on n'ecrit pas.
-        backup_dir = backup_db(db_dir, "backups")
+        # Backup AVANT toute ouverture/ecriture de la base Rekordbox.
         try:
-            result = export_set(db, rec.name, content_ids)
-        except Exception as e:  # verrou master.db (Rekordbox ouvert) ou IO
+            backup_dir = backup_db(db_dir, "backups")
+        except FileNotFoundError as e:
             raise HTTPException(
-                status_code=409, detail="ferme Rekordbox et reessaie"
+                status_code=500, detail=f"base Rekordbox introuvable : {e}"
             ) from e
+
+        # Ouverture puis export seulement apres le backup. Un verrou (Rekordbox
+        # ouvert) -> 409 ; toute autre erreur -> 500 (pas de 409 trompeur).
+        try:
+            db = open_db()
+            result = export_set(db, rec.name, content_ids)
+        except HTTPException:
+            raise
+        except Exception as e:
+            if _is_lock_error(e):
+                raise HTTPException(
+                    status_code=409, detail="ferme Rekordbox et reessaie"
+                ) from e
+            raise HTTPException(status_code=500, detail=f"echec export : {e}") from e
         result["backup"] = backup_dir
         return result
 

@@ -52,7 +52,7 @@ def _rb_dir_with_master(tmp_path):
 def test_export_endpoint_builds_playlist(tmp_path):
     fake = _FakeRB()
     rbdir = _rb_dir_with_master(tmp_path)
-    client = _client(tmp_path, lambda: (fake, str(rbdir)))
+    client = _client(tmp_path, lambda: (str(rbdir), lambda: fake))
 
     sid = client.post("/sets", json={"name": "Club 90", "mode": "count", "target": 3,
                                      "curve_points": [[0, 2], [1, 8]], "n_slots": 3}).json()["set_id"]
@@ -73,7 +73,7 @@ def test_export_endpoint_builds_playlist(tmp_path):
 def test_export_empty_set_400(tmp_path):
     fake = _FakeRB()
     rbdir = _rb_dir_with_master(tmp_path)
-    client = _client(tmp_path, lambda: (fake, str(rbdir)))
+    client = _client(tmp_path, lambda: (str(rbdir), lambda: fake))
     sid = client.post("/sets", json={"name": "Vide", "mode": "count", "target": 2,
                                      "curve_points": [[0, 5]], "n_slots": 2}).json()["set_id"]
     assert client.post(f"/sets/{sid}/export").status_code == 400
@@ -81,23 +81,29 @@ def test_export_empty_set_400(tmp_path):
 
 def test_export_unknown_set_404(tmp_path):
     fake = _FakeRB()
-    client = _client(tmp_path, lambda: (fake, str(tmp_path)))
+    client = _client(tmp_path, lambda: (str(tmp_path), lambda: fake))
     assert client.post("/sets/nope/export").status_code == 404
 
 
 def test_export_lock_error_409(tmp_path):
     rbdir = _rb_dir_with_master(tmp_path)
-
-    def boom():
-        raise RuntimeError("database is locked")
-
-    client = _client(tmp_path, lambda: (_raise_locked(), str(rbdir)))
+    client = _client(tmp_path, lambda: (str(rbdir), _LockedRB))
     sid = client.post("/sets", json={"name": "Lock", "mode": "count", "target": 2,
                                      "curve_points": [[0, 5]], "n_slots": 2}).json()["set_id"]
     client.put(f"/sets/{sid}/slots/0", json={"content_id": "a"})
     r = client.post(f"/sets/{sid}/export")
     assert r.status_code == 409
     assert "Rekordbox" in r.json()["detail"]
+
+
+def test_export_other_error_500(tmp_path):
+    # erreur non-verrou -> 500, pas un 409 trompeur
+    rbdir = _rb_dir_with_master(tmp_path)
+    client = _client(tmp_path, lambda: (str(rbdir), _BoomRB))
+    sid = client.post("/sets", json={"name": "Boom", "mode": "count", "target": 2,
+                                     "curve_points": [[0, 5]], "n_slots": 2}).json()["set_id"]
+    client.put(f"/sets/{sid}/slots/0", json={"content_id": "a"})
+    assert client.post(f"/sets/{sid}/export").status_code == 500
 
 
 class _LockedRB:
@@ -111,8 +117,15 @@ class _LockedRB:
         pass
 
 
-def _raise_locked():
-    return _LockedRB()
+class _BoomRB:
+    def create_playlist(self, name, **kw):
+        raise RuntimeError("disk full")
+
+    def add_to_playlist(self, pl, cid):
+        pass
+
+    def commit(self):
+        pass
 
 
 def test_export_missing_extra_503(tmp_path):
