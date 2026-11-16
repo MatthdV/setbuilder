@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
+from setbuilder.cache import apply_pragmas
 from setbuilder.export import backup_db, export_set
 from setbuilder.features_cache import open_features
 from setbuilder.impact import ImpactReport, forced_impact
@@ -128,6 +129,7 @@ def create_app(db_path: str, *, rb_provider=None) -> FastAPI:
         CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
     )
     conn = sqlite3.connect(db_path, check_same_thread=False)
+    apply_pragmas(conn)  # WAL + busy_timeout : partage sûr du cache avec le sous-process d'analyse
     # Garantit que les tables du moteur existent, même sur une base ouverte
     # directement (les tables `tracks` viennent de cache.open_cache côté lib).
     open_features(conn)  # features + galaxy
