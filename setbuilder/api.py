@@ -8,11 +8,17 @@ routes délèguent aux couches métier (sets_repo, suggest, impact) et lisent
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+_WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+
+from setbuilder.export import backup_db, export_set
 from setbuilder.features_cache import open_features
 from setbuilder.impact import ImpactReport, forced_impact
 from setbuilder.scoring import Candidate, ScoreBreakdown
@@ -95,7 +101,28 @@ def _require_set(conn: sqlite3.Connection, set_id: str) -> SetRecord:
     return rec
 
 
-def create_app(db_path: str) -> FastAPI:
+def _default_rb_provider():
+    """Localise la base Rekordbox SANS l'ouvrir (extra `rekordbox`).
+
+    Retourne (db_directory, open_db) : le backup se fait sur `db_directory`
+    AVANT que `open_db()` ne construise la base — aucune ouverture de la vraie
+    base avant le backup. Import paresseux : ImportError -> l'endpoint 503.
+    """
+    from pyrekordbox import Rekordbox6Database  # noqa: PLC0415
+    from pyrekordbox.config import get_config  # noqa: PLC0415
+
+    db_dir = get_config("rekordbox6", "db_dir")
+    if not db_dir:
+        db_dir = Path.home() / "Library" / "Pioneer" / "rekordbox"
+    return str(db_dir), Rekordbox6Database
+
+
+def _is_lock_error(exc: Exception) -> bool:
+    return "lock" in str(exc).lower()
+
+
+def create_app(db_path: str, *, rb_provider=None) -> FastAPI:
+    rb_provider = rb_provider or _default_rb_provider
     app = FastAPI(title="setbuilder")
     app.add_middleware(
         CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
@@ -106,6 +133,14 @@ def create_app(db_path: str) -> FastAPI:
     open_features(conn)  # features + galaxy
     open_sets(conn)      # sets + set_slots
     app.state.conn = conn
+
+    # Frontend statique (plan 5) : index.html a la racine, assets sous /static.
+    if _WEB_DIR.is_dir():
+        app.mount("/static", StaticFiles(directory=str(_WEB_DIR)), name="static")
+
+        @app.get("/")
+        def index():
+            return FileResponse(str(_WEB_DIR / "index.html"))
 
     @app.get("/library")
     def library():
@@ -187,5 +222,56 @@ def create_app(db_path: str) -> FastAPI:
         place_track(conn, set_id, pos, body.content_id, is_forced=True)
         slot = _serialize_set(conn, _require_set(conn, set_id))["slots"][pos]
         return {"slot": slot, "impact": _serialize_impact(report)}
+
+    @app.post("/sets/{set_id}/export")
+    def export_rekordbox(set_id: str):
+        rec = _require_set(conn, set_id)
+        content_ids = [s.content_id for s in rec.slots if s.content_id]
+        if not content_ids:
+            raise HTTPException(status_code=400, detail="set vide : aucun morceau a exporter")
+
+        try:
+            db_dir, open_db = rb_provider()
+        except ImportError as e:
+            raise HTTPException(
+                status_code=503,
+                detail="extra `rekordbox` absent : `uv sync --extra rekordbox`",
+            ) from e
+
+        # Backup AVANT toute ouverture/ecriture de la base Rekordbox.
+        try:
+            backup_dir = backup_db(db_dir, "backups")
+        except FileNotFoundError as e:
+            raise HTTPException(
+                status_code=500, detail=f"base Rekordbox introuvable : {e}"
+            ) from e
+
+        # Ouverture puis export seulement apres le backup. Un verrou (Rekordbox
+        # ouvert) -> 409 ; toute autre erreur -> 500 (pas de 409 trompeur).
+        # Fermeture systematique de la base dans finally : ne jamais retenir le
+        # verrou sqlite apres la requete, meme sur echec (un handle ouvert
+        # ferait echouer a tort l'export suivant). close() optionnel (duck-type).
+        db = None
+        try:
+            db = open_db()
+            result = export_set(db, rec.name, content_ids)
+        except HTTPException:
+            raise
+        except Exception as e:
+            if _is_lock_error(e):
+                raise HTTPException(
+                    status_code=409, detail="ferme Rekordbox et reessaie"
+                ) from e
+            raise HTTPException(status_code=500, detail=f"echec export : {e}") from e
+        finally:
+            if db is not None:
+                close = getattr(db, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
+        result["backup"] = backup_dir
+        return result
 
     return app
