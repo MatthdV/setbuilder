@@ -124,16 +124,38 @@ def _refresh_galaxy(cache: sqlite3.Connection, analysis_version: str, *, force: 
     ):
         ids.append(cid)
         embs.append(np.frombuffer(blob, dtype=np.float32))
+    id_set = set(ids)
+
+    # Purge les coords qui n'ont plus d'embedding à la version courante (bump de
+    # version, embedding perdu) : sinon /galaxy sert des coords périmées. La purge
+    # n'est PAS commit ici : elle doit l'être avec le recompute (transaction unique),
+    # sinon /galaxy pourrait servir un état partiel si fit_umap échoue.
+    existing = {r[0] for r in cache.execute("SELECT content_id FROM galaxy")}
+    orphans = existing - id_set
+    if orphans:
+        cache.executemany("DELETE FROM galaxy WHERE content_id = ?", [(o,) for o in orphans])
+
     if not ids:
+        cache.commit()  # galaxy vidée : rien à recomputer, on persiste la purge seule
         return
-    have = cache.execute("SELECT COUNT(*) FROM galaxy WHERE umap_version = ?", (UMAP_VERSION,)).fetchone()[0]
-    if not force and have == len(ids):
+    # Resync si forcé, OU si l'ensemble des coords présentes ne couvre pas déjà
+    # exactement les ids courants (un simple compte égal ne suffit pas : des ids
+    # différents peuvent coïncider en nombre après un changement de version).
+    # Lecture dans la même connexion : voit les DELETE non encore commit.
+    have_ids = {r[0] for r in cache.execute(
+        "SELECT content_id FROM galaxy WHERE umap_version = ?", (UMAP_VERSION,))}
+    if not force and have_ids == id_set:
+        cache.commit()  # persiste la purge éventuelle ; no-op si aucun orphelin
         return
-    coords = fit_umap(np.stack(embs))
+    try:
+        coords = fit_umap(np.stack(embs))
+    except Exception:
+        cache.rollback()  # ne pas laisser la purge visible sans coords recalculées
+        raise
     cache.executemany(
         "INSERT INTO galaxy (content_id, umap_x, umap_y, umap_version) VALUES (?, ?, ?, ?) "
         "ON CONFLICT(content_id) DO UPDATE SET umap_x=excluded.umap_x, umap_y=excluded.umap_y, "
         "umap_version=excluded.umap_version",
         [(cid, float(x), float(y), UMAP_VERSION) for cid, (x, y) in zip(ids, coords)],
     )
-    cache.commit()
+    cache.commit()  # purge + coords : un seul commit atomique
