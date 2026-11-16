@@ -51,15 +51,23 @@ def write_status(path: str, data: dict) -> None:
         raise
 
 
-def read_status(path: str) -> dict:
-    """Statut courant. Absent/corrompu -> idle ; running+pid non vivant -> stale."""
+def read_status_raw(path: str) -> dict:
+    """Statut stocké tel quel, sans dérivation stale. Absent/corrompu -> idle.
+
+    Utilisé pour le compare-and-set post-spawn : la claim écrit running+pid:None,
+    que read_status dériverait en `stale` ; le CAS doit comparer au brut.
+    """
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except (FileNotFoundError, ValueError, OSError):
         return {"state": "idle"}
-    if not isinstance(data, dict):
-        return {"state": "idle"}
+    return data if isinstance(data, dict) else {"state": "idle"}
+
+
+def read_status(path: str) -> dict:
+    """Statut courant. Absent/corrompu -> idle ; running+pid non vivant -> stale."""
+    data = read_status_raw(path)
     if data.get("state") == "running" and not pid_alive(data.get("pid")):
         stale = dict(data)
         stale["state"] = "stale"
