@@ -248,6 +248,10 @@ def create_app(db_path: str, *, rb_provider=None) -> FastAPI:
 
         # Ouverture puis export seulement apres le backup. Un verrou (Rekordbox
         # ouvert) -> 409 ; toute autre erreur -> 500 (pas de 409 trompeur).
+        # Fermeture systematique de la base dans finally : ne jamais retenir le
+        # verrou sqlite apres la requete, meme sur echec (un handle ouvert
+        # ferait echouer a tort l'export suivant). close() optionnel (duck-type).
+        db = None
         try:
             db = open_db()
             result = export_set(db, rec.name, content_ids)
@@ -259,6 +263,14 @@ def create_app(db_path: str, *, rb_provider=None) -> FastAPI:
                     status_code=409, detail="ferme Rekordbox et reessaie"
                 ) from e
             raise HTTPException(status_code=500, detail=f"echec export : {e}") from e
+        finally:
+            if db is not None:
+                close = getattr(db, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
         result["backup"] = backup_dir
         return result
 

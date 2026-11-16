@@ -137,3 +137,48 @@ def test_export_missing_extra_503(tmp_path):
                                      "curve_points": [[0, 5]], "n_slots": 2}).json()["set_id"]
     client.put(f"/sets/{sid}/slots/0", json={"content_id": "a"})
     assert client.post(f"/sets/{sid}/export").status_code == 503
+
+
+class _ClosingRB:
+    def __init__(self):
+        self.closed = False
+
+    def create_playlist(self, name, **kw):
+        return {"name": name}
+
+    def add_to_playlist(self, pl, cid):
+        pass
+
+    def commit(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+class _ClosingBoomRB(_ClosingRB):
+    def create_playlist(self, name, **kw):
+        raise RuntimeError("disk full")
+
+
+def test_export_closes_db_on_success(tmp_path):
+    fake = _ClosingRB()
+    rbdir = _rb_dir_with_master(tmp_path)
+    client = _client(tmp_path, lambda: (str(rbdir), lambda: fake))
+    sid = client.post("/sets", json={"name": "Close", "mode": "count", "target": 2,
+                                     "curve_points": [[0, 5]], "n_slots": 2}).json()["set_id"]
+    client.put(f"/sets/{sid}/slots/0", json={"content_id": "a"})
+    assert client.post(f"/sets/{sid}/export").status_code == 200
+    assert fake.closed is True
+
+
+def test_export_closes_db_on_failure(tmp_path):
+    # meme sur echec, la base Rekordbox est fermee (pas de lock retenu)
+    fake = _ClosingBoomRB()
+    rbdir = _rb_dir_with_master(tmp_path)
+    client = _client(tmp_path, lambda: (str(rbdir), lambda: fake))
+    sid = client.post("/sets", json={"name": "CloseBoom", "mode": "count", "target": 2,
+                                     "curve_points": [[0, 5]], "n_slots": 2}).json()["set_id"]
+    client.put(f"/sets/{sid}/slots/0", json={"content_id": "a"})
+    assert client.post(f"/sets/{sid}/export").status_code == 500
+    assert fake.closed is True
