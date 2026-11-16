@@ -1,10 +1,13 @@
 """CLI : python -m setbuilder sync | analyze"""
 
 import argparse
+import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
+from setbuilder.analyze_job import write_status
 from setbuilder.cache import open_cache
 from setbuilder.rbread import read_library
 from setbuilder.sync import sync
@@ -27,23 +30,57 @@ def build_real_analyzers():
     return Analyzers(essentia=analyze_essentia, muq=analyze_muq)
 
 
-def _cmd_analyze(args) -> int:
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _cmd_analyze(args, analyzers_factory=None) -> int:
     from setbuilder.analyze import run_analyze
     from setbuilder.errors import AnalysisUnavailableError
 
-    def progress(i, total, st):
-        if i % 25 == 0 or i == total:
-            print(f"[{i}/{total}] analysés={st.analyzed} sautés={st.skipped} "
-                  f"introuvables={st.missing} échecs={st.failed}", flush=True)
+    # Résolu à l'appel (pas en défaut d'argument) pour rester monkeypatchable.
+    factory = analyzers_factory or build_real_analyzers
+    status_path = getattr(args, "status_file", None)
+    pid = os.getpid()
 
     cache = open_cache(str(Path(args.cache)))
     try:
-        stats = run_analyze(cache, analyzers=build_real_analyzers(), progress=progress)
-    except AnalysisUnavailableError as e:
-        print(f"Analyse impossible : {e}", file=sys.stderr)
-        return 2
+        if status_path:
+            total = cache.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+            write_status(status_path, {"state": "running", "pid": pid,
+                                       "i": 0, "total": total, "started_at": _now()})
+
+        def progress(i, total, st):
+            if i % 25 == 0 or i == total:
+                print(f"[{i}/{total}] analysés={st.analyzed} sautés={st.skipped} "
+                      f"introuvables={st.missing} échecs={st.failed}", flush=True)
+            if status_path:
+                write_status(status_path, {"state": "running", "pid": pid, "i": i, "total": total,
+                                           "analyzed": st.analyzed, "skipped": st.skipped,
+                                           "missing": st.missing, "failed": st.failed})
+
+        try:
+            stats = run_analyze(cache, analyzers=factory(), progress=progress)
+        except AnalysisUnavailableError as e:
+            if status_path:
+                write_status(status_path, {"state": "error",
+                                           "message": f"extra analysis absent : {e}",
+                                           "finished_at": _now()})
+            print(f"Analyse impossible : {e}", file=sys.stderr)
+            return 2
+        except Exception as e:  # noqa: BLE001 - garantir un statut terminal, puis re-raise
+            if status_path:
+                write_status(status_path, {"state": "error", "message": str(e)[:200],
+                                           "finished_at": _now()})
+            raise
     finally:
         cache.close()
+
+    if status_path:
+        write_status(status_path, {"state": "done", "analyzed": stats.analyzed,
+                                   "skipped": stats.skipped, "missing": stats.missing,
+                                   "failed": stats.failed, "failures": stats.failures,
+                                   "finished_at": _now()})
     print(f"analyze OK : {stats.analyzed} analysés, {stats.skipped} déjà à jour, "
           f"{stats.missing} fichiers introuvables, {stats.failed} échecs")
     return 0
@@ -56,9 +93,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cache", default=DEFAULT_CACHE, help="chemin du cache SQLite")
     a = sub.add_parser("analyze", help="Analyse audio (Essentia + MuQ + UMAP), incrémentale")
     a.add_argument("--cache", default=DEFAULT_CACHE, help="chemin du cache SQLite")
+    a.add_argument("--status-file", default=None, help="fichier JSON de statut (statut live + terminal)")
     args = parser.parse_args(argv)
 
     if rekordbox_running():
+        if args.command == "analyze" and getattr(args, "status_file", None):
+            write_status(args.status_file, {"state": "error",
+                                            "message": "Rekordbox ouvert : ferme-le avant de lancer l'analyse.",
+                                            "finished_at": _now()})
         print("Rekordbox est ouvert : ferme-le avant de lancer cette commande "
               "(master.db ne doit pas être lu pendant qu'il tourne, et l'analyse est lourde).",
               file=sys.stderr)

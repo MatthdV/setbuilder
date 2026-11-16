@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from setbuilder.analyze import ANALYSIS_VERSION, Analyzers, run_analyze
+from setbuilder.analyze import ANALYSIS_VERSION, Analyzers, count_pending, run_analyze
 from setbuilder.cache import open_cache
 from setbuilder.errors import AnalysisUnavailableError
 from setbuilder.essentia_analyze import build_features
@@ -68,7 +68,8 @@ def test_run_analyze_continues_on_missing(tmp_path):
     cache = _cache(tmp_path, ["/a/gone.wav", "/a/ok.wav", None])
     fk = Fakes(missing={"/a/gone.wav"})
     s = run_analyze(cache, analyzers=fk.analyzers(), analysis_version="v1")
-    assert (s.analyzed, s.missing) == (1, 2)  # fichier disparu + file_path NULL
+    # file_path NULL = non-candidat (hors batch), seul le fichier disparu est "missing"
+    assert (s.analyzed, s.missing) == (1, 1)
     assert has_features(cache, "2", "v1")
 
 
@@ -87,6 +88,32 @@ def test_run_analyze_none_embedding_is_failure_not_nan(tmp_path):
     s = run_analyze(cache, analyzers=an, analysis_version="v1")
     assert (s.analyzed, s.failed) == (0, 1)
     assert not has_features(cache, "1", "v1")
+
+
+def test_run_analyze_records_failure_content_ids(tmp_path):
+    cache = _cache(tmp_path, ["/a/ok.wav", "/a/bad.wav"])  # "1" ok, "2" -> essentia boom
+    fk = Fakes(boom={"/a/bad.wav"})
+    s = run_analyze(cache, analyzers=fk.analyzers(), analysis_version="v1")
+    assert s.failed == 1
+    assert [cid for cid, _ in s.failures] == ["2"]
+    assert "boom" in s.failures[0][1]
+
+
+def test_count_pending_excludes_missing_file_path(tmp_path):
+    # "1" analysable, "2" file_path NULL, "3" file_path vide -> seul "1" compte
+    cache = _cache(tmp_path, ["/a/one.wav", None, ""])
+    pending, total = count_pending(cache, "v1")
+    assert (pending, total) == (1, 1)
+
+
+def test_count_pending_drops_analyzed_tracks(tmp_path):
+    cache = _cache(tmp_path, ["/a/one.wav", "/a/two.wav"])
+    fk = Fakes()
+    run_analyze(cache, analyzers=fk.analyzers(), analysis_version="v1")
+    pending, total = count_pending(cache, "v1")
+    assert (pending, total) == (0, 2)  # tout analysé, total inchangé
+    # une version différente rend tout de nouveau "pending"
+    assert count_pending(cache, "v-next") == (2, 2)
 
 
 def test_run_analyze_aborts_when_models_unavailable(tmp_path):

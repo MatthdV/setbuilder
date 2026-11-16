@@ -149,3 +149,15 @@ input, select {
 }
 .toast.show { opacity: 1; transform: translateY(0); }
 .toast.err { border-left-color: var(--danger); }
+
+/* --- Panneau d'analyse (plan 6) --- */
+.analyze-panel { display: flex; flex-direction: column; gap: 8px; }
+.an-head { font-weight: 600; color: var(--text); }
+.an-bar { height: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+.an-bar-fill { height: 100%; background: var(--accent); transition: width .3s ease; }
+.an-banner { padding: 6px 10px; border-radius: var(--r-sm); font-size: 13px; }
+.an-banner.err { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+.an-banner.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.an-banner.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.an-fails { font-size: 12px; color: var(--text-dim); }
+.an-fails summary { cursor: pointer; }

@@ -1,7 +1,7 @@
 """Batch d'analyse incrémental : features Essentia + embedding MuQ + carte UMAP."""
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 import numpy as np
@@ -32,6 +32,35 @@ class AnalyzeStats:
     skipped: int = 0
     missing: int = 0
     failed: int = 0
+    failures: list[tuple[str, str]] = field(default_factory=list)  # (content_id, message)
+
+
+# Règle unique "candidat analysable" partagée (P2-5) : un track est analysable
+# s'il a un file_path utilisable. count_pending la réutilise pour le dénominateur
+# du front ; run_analyze applique le MÊME test (`if file_path`) track par track.
+_ANALYZABLE_WHERE = "file_path IS NOT NULL AND file_path != ''"
+
+
+def count_pending(
+    cache: sqlite3.Connection, analysis_version: str = ANALYSIS_VERSION
+) -> tuple[int, int]:
+    """(pending, total) des tracks analysables.
+
+    total = tracks avec un file_path utilisable. pending = ceux-là sans features
+    à `analysis_version`. Même filtre que la sélection de candidats de
+    run_analyze, pour que la barre de progression atteigne bien 0.
+    """
+    open_features(cache)
+    total = cache.execute(
+        f"SELECT COUNT(*) FROM tracks WHERE {_ANALYZABLE_WHERE}"
+    ).fetchone()[0]
+    pending = cache.execute(
+        f"SELECT COUNT(*) FROM tracks t WHERE {_ANALYZABLE_WHERE} "
+        "AND NOT EXISTS (SELECT 1 FROM features f "
+        "WHERE f.content_id = t.content_id AND f.analysis_version = ?)",
+        (analysis_version,),
+    ).fetchone()[0]
+    return pending, total
 
 
 def run_analyze(
@@ -47,7 +76,12 @@ def run_analyze(
     Seule `AnalysisUnavailableError` (modèles indisponibles) l'arrête.
     """
     open_features(cache)
-    rows = cache.execute("SELECT content_id, file_path FROM tracks ORDER BY content_id").fetchall()
+    # Même filtre que count_pending (P2-5) : seuls les tracks analysables entrent
+    # dans le batch, pour que son `total` (progress) == /analyze/pending.total.
+    # Un file_path nul/vide n'est pas un candidat (pas compté `missing`).
+    rows = cache.execute(
+        f"SELECT content_id, file_path FROM tracks WHERE {_ANALYZABLE_WHERE} ORDER BY content_id"
+    ).fetchall()
     stats = AnalyzeStats()
 
     for i, (content_id, file_path) in enumerate(rows, 1):
@@ -71,8 +105,9 @@ def run_analyze(
                     stats.analyzed += 1
                 except AnalysisUnavailableError:
                     raise
-                except Exception:  # noqa: BLE001 - un track KO ne doit pas tuer le batch
+                except Exception as e:  # noqa: BLE001 - un track KO ne doit pas tuer le batch
                     stats.failed += 1
+                    stats.failures.append((content_id, str(e)[:200]))
         if progress:
             progress(i, len(rows), stats)
 

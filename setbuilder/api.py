@@ -8,16 +8,28 @@ routes délèguent aux couches métier (sets_repo, suggest, impact) et lisent
 from __future__ import annotations
 
 import sqlite3
+import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
+from setbuilder.analyze import count_pending
+from setbuilder.analyze_job import (
+    pid_alive,
+    read_status,
+    read_status_raw,
+    status_path_for,
+    write_status,
+)
+from setbuilder.analyze_launch import spawn_analyze
+from setbuilder.cache import apply_pragmas
 from setbuilder.export import backup_db, export_set
 from setbuilder.features_cache import open_features
 from setbuilder.impact import ImpactReport, forced_impact
@@ -121,13 +133,28 @@ def _is_lock_error(exc: Exception) -> bool:
     return "lock" in str(exc).lower()
 
 
-def create_app(db_path: str, *, rb_provider=None) -> FastAPI:
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _default_rekordbox_probe() -> bool:
+    from setbuilder.__main__ import rekordbox_running  # import tardif : évite le poids au boot
+    return rekordbox_running()
+
+
+def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
+               rekordbox_probe=None) -> FastAPI:
     rb_provider = rb_provider or _default_rb_provider
+    analyze_launcher = analyze_launcher or spawn_analyze
+    rekordbox_probe = rekordbox_probe or _default_rekordbox_probe
+    status_path = status_path_for(db_path)
+    analyze_lock = threading.Lock()
     app = FastAPI(title="setbuilder")
     app.add_middleware(
         CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
     )
     conn = sqlite3.connect(db_path, check_same_thread=False)
+    apply_pragmas(conn)  # WAL + busy_timeout : partage sûr du cache avec le sous-process d'analyse
     # Garantit que les tables du moteur existent, même sur une base ouverte
     # directement (les tables `tracks` viennent de cache.open_cache côté lib).
     open_features(conn)  # features + galaxy
@@ -273,5 +300,39 @@ def create_app(db_path: str, *, rb_provider=None) -> FastAPI:
                         pass
         result["backup"] = backup_dir
         return result
+
+    # --- Analyse pilotée depuis l'app (plan 6) ---------------------------------
+
+    @app.get("/analyze/pending")
+    def analyze_pending():
+        pending, total = count_pending(conn)
+        return {"pending": pending, "total": total}
+
+    @app.get("/analyze/status")
+    def analyze_status():
+        return read_status(status_path)  # jamais 500 ; idle/running/stale/done/error
+
+    @app.post("/analyze")
+    def analyze_start():
+        with analyze_lock:  # sérialise check -> claim -> spawn -> CAS (uvicorn mono-worker)
+            status = read_status(status_path)
+            if status.get("state") == "running" and pid_alive(status.get("pid")):
+                raise HTTPException(status_code=409, detail="analyse déjà en cours")
+            if rekordbox_probe():
+                raise HTTPException(
+                    status_code=409, detail="ferme Rekordbox pour lancer l'analyse")
+            pending, _ = count_pending(conn)
+            # Claim AVANT le spawn : pid None, dérivé en `stale` tant que le pid n'est pas posé.
+            write_status(status_path, {"state": "running", "pid": None, "i": 0,
+                                       "total": pending, "started_at": _now()})
+            pid = analyze_launcher(db_path, status_path)
+            # CAS post-spawn : ne pose le pid que si la claim est intacte (brut, pas dérivé).
+            raw = read_status_raw(status_path)
+            if raw.get("state") == "running" and raw.get("pid") is None:
+                raw = dict(raw)
+                raw["pid"] = pid
+                write_status(status_path, raw)
+            return JSONResponse(status_code=202,
+                                content={"pid": pid, "status_url": "/analyze/status"})
 
     return app

@@ -14,7 +14,8 @@ const post = (p, b) => _req("POST", p, b);
 const put = (p, b) => _req("PUT", p, b);
 const del = (p) => _req("DELETE", p);
 
-const state = { set: null, library: [], galaxy: [], selPos: null, titleById: {}, energyById: {} };
+const state = { set: null, library: [], galaxy: [], selPos: null, titleById: {}, energyById: {},
+                analyzePoll: null };
 
 function toast(msg, isErr) {
   const t = document.getElementById("toast");
@@ -107,6 +108,44 @@ async function forceTrack(pos, cid) {
   renderImpact(document.getElementById("impact"), res.impact);
 }
 
+// ---- analyse (plan 6) ----
+async function refreshAnalyze() {
+  const el = document.getElementById("analyze-panel");
+  const [pend, status] = await Promise.all([get("/analyze/pending"), get("/analyze/status")]);
+  renderAnalyze(el, pend, status, startAnalyze);
+  if (status.state === "running" && !state.analyzePoll) {
+    state.analyzePoll = setInterval(pollAnalyze, 2000);
+  }
+  return status;
+}
+
+async function pollAnalyze() {
+  const status = await get("/analyze/status");
+  if (["done", "error", "idle", "stale"].includes(status.state)) {
+    clearInterval(state.analyzePoll);
+    state.analyzePoll = null;
+    await Promise.all([refreshAnalyze(), loadGalaxy()]);  // galaxy a pu se peupler
+    render();
+    return;
+  }
+  renderAnalyze(document.getElementById("analyze-panel"),
+    await get("/analyze/pending"), status, startAnalyze);
+}
+
+async function startAnalyze() {
+  try {
+    await post("/analyze");
+    toast("Analyse lancée.");
+    await refreshAnalyze();
+    if (!state.analyzePoll) state.analyzePoll = setInterval(pollAnalyze, 2000);
+  } catch (e) {
+    const msg = e.status === 409 ? (e.detail || "Analyse déjà en cours ou Rekordbox ouvert.")
+                                 : (e.detail || "Lancement impossible.");
+    toast(msg, true);
+    await refreshAnalyze();
+  }
+}
+
 async function exportSet() {
   if (!state.set) { toast("Aucun set chargé.", true); return; }
   if (!confirm("Exporter vers Rekordbox ?\nRekordbox doit être FERMÉ. Un backup auto est fait avant écriture.")) return;
@@ -152,6 +191,6 @@ function wire() {
 
 async function boot() {
   wire();
-  await Promise.all([loadLibrary(), loadGalaxy(), loadSets()]);
+  await Promise.all([loadLibrary(), loadGalaxy(), loadSets(), refreshAnalyze()]);
 }
 boot();

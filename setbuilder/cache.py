@@ -27,9 +27,24 @@ CREATE TABLE IF NOT EXISTS tracks (
 """
 
 
+def apply_pragmas(conn: sqlite3.Connection) -> None:
+    """Pose les pragmas de concurrence sur une connexion du cache.
+
+    Serveur web et sous-process d'analyse partagent setbuilder.db. Ordre
+    volontaire : busy_timeout AVANT journal_mode=WAL, pour que le passage en
+    WAL lui-même attende si la base est brièvement verrouillée. WAL = lecteurs
+    ne bloquent pas l'écrivain ; synchronous=NORMAL = durabilité suffisante en
+    WAL avec de meilleures perfs.
+    """
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+
+
 def open_cache(path: str) -> sqlite3.Connection:
     """Ouvre (ou crée) le cache et garantit que le schéma existe."""
     conn = sqlite3.connect(path)
+    apply_pragmas(conn)
     conn.execute(_SCHEMA)
     conn.commit()
     return conn
