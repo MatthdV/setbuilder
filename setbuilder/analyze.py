@@ -76,7 +76,12 @@ def run_analyze(
     Seule `AnalysisUnavailableError` (modèles indisponibles) l'arrête.
     """
     open_features(cache)
-    rows = cache.execute("SELECT content_id, file_path FROM tracks ORDER BY content_id").fetchall()
+    # Même filtre que count_pending (P2-5) : seuls les tracks analysables entrent
+    # dans le batch, pour que son `total` (progress) == /analyze/pending.total.
+    # Un file_path nul/vide n'est pas un candidat (pas compté `missing`).
+    rows = cache.execute(
+        f"SELECT content_id, file_path FROM tracks WHERE {_ANALYZABLE_WHERE} ORDER BY content_id"
+    ).fetchall()
     stats = AnalyzeStats()
 
     for i, (content_id, file_path) in enumerate(rows, 1):

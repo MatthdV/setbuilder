@@ -68,7 +68,8 @@ def test_run_analyze_continues_on_missing(tmp_path):
     cache = _cache(tmp_path, ["/a/gone.wav", "/a/ok.wav", None])
     fk = Fakes(missing={"/a/gone.wav"})
     s = run_analyze(cache, analyzers=fk.analyzers(), analysis_version="v1")
-    assert (s.analyzed, s.missing) == (1, 2)  # fichier disparu + file_path NULL
+    # file_path NULL = non-candidat (hors batch), seul le fichier disparu est "missing"
+    assert (s.analyzed, s.missing) == (1, 1)
     assert has_features(cache, "2", "v1")
 
 
