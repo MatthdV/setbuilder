@@ -36,3 +36,17 @@ class EnergyCurve:
                 t = (pos - x0) / (x1 - x0)
                 return y0 + t * (y1 - y0)
         return pts[-1][1]  # inatteignable, garde-fou
+
+
+# Courbes cibles par type de set (position 0-1, énergie 0-10). Source unique :
+# l'API les applique à la création, le front n'envoie que le type.
+PRESETS: dict[str, list[tuple[float, float]]] = {
+    # Montée douce : on pose l'ambiance sans brûler la piste.
+    "warmup": [(0.0, 2.0), (0.5, 3.5), (1.0, 5.0)],
+    # Montée, pic, plateau haut.
+    "main": [(0.0, 5.0), (0.3, 7.0), (0.65, 9.0), (1.0, 8.0)],
+    # Pic tenu puis descente vers la fin.
+    "closing": [(0.0, 8.0), (0.4, 9.0), (1.0, 4.0)],
+    # After : bas/moyen, hypnotique, sans gros pic.
+    "after": [(0.0, 4.0), (0.4, 5.5), (0.8, 5.0), (1.0, 3.0)],
+}

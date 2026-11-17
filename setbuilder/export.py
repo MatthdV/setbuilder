@@ -35,6 +35,24 @@ def backup_db(db_directory: str, dest_root: str) -> str:
     return dest
 
 
+def _unique_playlist_name(db, name: str) -> str:
+    """`name`, ou `name (2)`, `name (3)`... si une playlist porte déjà ce nom.
+    Duck-typed : sans `get_playlist` on garde le nom tel quel."""
+    getter = getattr(db, "get_playlist", None)
+    if not callable(getter):
+        return name
+    try:
+        existing = {getattr(p, "Name", None) for p in getter()}
+    except Exception:  # noqa: BLE001 - jamais bloquant
+        return name
+    if name not in existing:
+        return name
+    n = 2
+    while f"{name} ({n})" in existing:
+        n += 1
+    return f"{name} ({n})"
+
+
 def export_set(db, name: str, content_ids: list[str]) -> dict:
     """Cree la playlist `name` et y ajoute les `content_ids` DANS L'ORDRE,
     puis commit. `db` est duck-type (create_playlist/add_to_playlist/commit).
@@ -45,6 +63,7 @@ def export_set(db, name: str, content_ids: list[str]) -> dict:
     if not content_ids:
         raise ValueError("content_ids vide : rien a exporter")
 
+    name = _unique_playlist_name(db, name)
     pl = db.create_playlist(name)
     try:
         for cid in content_ids:

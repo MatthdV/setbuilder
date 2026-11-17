@@ -20,11 +20,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
-from setbuilder.analyze import ANALYSIS_VERSION, count_pending
+from setbuilder.analyze import ANALYSIS_VERSION, count_failed, count_pending
 from setbuilder.analyze_job import (
     pid_alive,
     read_status,
@@ -36,6 +36,7 @@ from setbuilder.analyze_launch import spawn_analyze
 from setbuilder.cache import apply_pragmas, ensure_schema
 from setbuilder.export import backup_db, export_set
 from setbuilder.features_cache import open_features, resolve_analysis_version
+from setbuilder.curve import PRESETS
 from setbuilder.impact import ImpactReport, forced_impact
 from setbuilder.scoring import Candidate, ScoreBreakdown
 from setbuilder.sets_repo import (
@@ -55,6 +56,7 @@ from setbuilder.timeline import slot_start_times
 
 class ForceBody(BaseModel):
     content_id: str
+    overwrite: bool = False
 
 
 def _serialize_breakdown(b: ScoreBreakdown) -> dict:
@@ -84,13 +86,23 @@ class SetCreate(BaseModel):
     name: Annotated[str, StringConstraints(min_length=1, max_length=120)]
     mode: Literal["count", "duration"]
     target: Annotated[float, Field(gt=0, allow_inf_nan=False)]
-    curve_points: Annotated[list[_Pt], Field(min_length=1, max_length=64)]
+    curve_points: Annotated[list[_Pt], Field(min_length=1, max_length=64)] | None = None
+    set_type: Literal["warmup", "main", "closing", "after"] | None = None
     n_slots: Annotated[int, Field(ge=1, le=200)]
     analysis_version: str = ANALYSIS_VERSION
+
+    @model_validator(mode="after")
+    def _curve_or_type(self):
+        if self.curve_points is None and self.set_type is None:
+            raise ValueError("set_type ou curve_points requis")
+        if self.curve_points is None:
+            self.curve_points = [tuple(p) for p in PRESETS[self.set_type]]
+        return self
 
 
 class SlotUpdate(BaseModel):
     content_id: str
+    overwrite: bool = False
     is_anchor: bool = False
     is_forced: bool = False
 
@@ -107,6 +119,7 @@ def _serialize_set(conn: sqlite3.Connection, rec: SetRecord) -> dict:
         "set_id": rec.set_id, "name": rec.name, "mode": rec.mode, "target": rec.target,
         "curve_points": [list(p) for p in rec.curve_points],
         "analysis_version": rec.analysis_version,
+        "set_type": rec.set_type or "custom",
         "slots": [
             {"position": s.position, "content_id": s.content_id, "is_anchor": s.is_anchor,
              "is_forced": s.is_forced, "start_time_s": starts[i]}
@@ -121,6 +134,17 @@ def _require_set(conn: sqlite3.Connection, set_id: str) -> SetRecord:
         raise HTTPException(status_code=404, detail="set introuvable")
     rec.analysis_version = resolve_analysis_version(conn, rec.analysis_version)
     return rec
+
+
+def _check_placement(rec: SetRecord, pos: int, content_id: str, overwrite: bool) -> None:
+    """409 si le morceau est déjà dans un autre slot, ou si le slot cible est
+    ancré/forcé et que l'écrasement n'est pas explicite."""
+    for s in rec.slots:
+        if s.content_id == content_id and s.position != pos:
+            raise HTTPException(status_code=409, detail="duplicate_track")
+    cur = rec.slots[pos]
+    if cur.content_id and (cur.is_anchor or cur.is_forced) and cur.content_id != content_id and not overwrite:
+        raise HTTPException(status_code=409, detail="slot_protected")
 
 
 def _default_rb_provider():
@@ -236,7 +260,7 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     def post_set(body: SetCreate):
         try:
             sid = create_set(conn, body.name, body.mode, body.target, body.curve_points,
-                             body.analysis_version, n_slots=body.n_slots)
+                             body.analysis_version, n_slots=body.n_slots, set_type=body.set_type)
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
         return {"set_id": sid}
@@ -273,6 +297,7 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
             raise HTTPException(status_code=404, detail="slot hors bornes")
         if conn.execute("SELECT 1 FROM tracks WHERE content_id = ?", (body.content_id,)).fetchone() is None:
             raise HTTPException(status_code=404, detail="morceau introuvable dans la lib")
+        _check_placement(rec, pos, body.content_id, body.overwrite)
         place_track(conn, set_id, pos, body.content_id,
                     is_anchor=body.is_anchor, is_forced=body.is_forced)
         return _serialize_set(conn, _require_set(conn, set_id))["slots"][pos]
@@ -301,6 +326,7 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
         forced = by_id.get(body.content_id)
         if forced is None:
             raise HTTPException(status_code=404, detail="morceau introuvable dans la lib")
+        _check_placement(rec, pos, body.content_id, body.overwrite)
         durations = _durations(conn, rec)
         ctx = build_slot_context(rec, pos, by_id, durations)
         next_ = _next_filled(rec, pos, by_id)
@@ -365,7 +391,7 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     @app.get("/analyze/pending")
     def analyze_pending():
         pending, total = count_pending(conn)
-        return {"pending": pending, "total": total}
+        return {"pending": pending, "total": total, "failed": count_failed(conn)}
 
     @app.get("/analyze/status")
     def analyze_status():

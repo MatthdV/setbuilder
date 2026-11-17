@@ -10,7 +10,7 @@ from setbuilder.audio import load_audio_16k_mono
 from setbuilder.energy import ENERGY_FORMULA_VERSION
 from setbuilder.errors import AnalysisUnavailableError
 from setbuilder.essentia_analyze import to_cache_dict
-from setbuilder.features_cache import has_features, open_features, upsert_features
+from setbuilder.features_cache import has_features, open_features, record_failure, upsert_features
 from setbuilder.galaxy import UMAP_VERSION, fit_umap
 
 # change si un modèle ou la formule change -> force la ré-analyse
@@ -57,10 +57,19 @@ def count_pending(
     pending = cache.execute(
         f"SELECT COUNT(*) FROM tracks t WHERE {_ANALYZABLE_WHERE} "
         "AND NOT EXISTS (SELECT 1 FROM features f "
-        "WHERE f.content_id = t.content_id AND f.analysis_version = ?)",
-        (analysis_version,),
+        "WHERE f.content_id = t.content_id AND f.analysis_version = ?) "
+        "AND NOT EXISTS (SELECT 1 FROM analyze_failures x "
+        "WHERE x.content_id = t.content_id AND x.analysis_version = ?)",
+        (analysis_version, analysis_version),
     ).fetchone()[0]
     return pending, total
+
+
+def count_failed(cache: sqlite3.Connection, analysis_version: str = ANALYSIS_VERSION) -> int:
+    open_features(cache)
+    return cache.execute(
+        "SELECT COUNT(*) FROM analyze_failures x JOIN tracks t ON t.content_id = x.content_id "
+        "WHERE x.analysis_version = ?", (analysis_version,)).fetchone()[0]
 
 
 def run_analyze(
@@ -80,7 +89,10 @@ def run_analyze(
     # dans le batch, pour que son `total` (progress) == /analyze/pending.total.
     # Un file_path nul/vide n'est pas un candidat (pas compté `missing`).
     rows = cache.execute(
-        f"SELECT content_id, file_path FROM tracks WHERE {_ANALYZABLE_WHERE} ORDER BY content_id"
+        f"SELECT content_id, file_path FROM tracks t WHERE {_ANALYZABLE_WHERE} "
+        "AND NOT EXISTS (SELECT 1 FROM analyze_failures x "
+        "WHERE x.content_id = t.content_id AND x.analysis_version = ?) ORDER BY content_id",
+        (analysis_version,),
     ).fetchall()
     stats = AnalyzeStats()
 
@@ -108,6 +120,7 @@ def run_analyze(
                 except Exception as e:  # noqa: BLE001 - un track KO ne doit pas tuer le batch
                     stats.failed += 1
                     stats.failures.append((content_id, str(e)[:200]))
+                    record_failure(cache, content_id, analysis_version, str(e))
         if progress:
             progress(i, len(rows), stats)
 

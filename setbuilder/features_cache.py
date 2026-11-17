@@ -26,6 +26,13 @@ CREATE TABLE IF NOT EXISTS features (
     analysis_version TEXT,
     analyzed_at     TEXT
 );
+CREATE TABLE IF NOT EXISTS analyze_failures (
+    content_id       TEXT,
+    analysis_version TEXT,
+    error            TEXT,
+    failed_at        TEXT,
+    PRIMARY KEY (content_id, analysis_version)
+);
 CREATE TABLE IF NOT EXISTS galaxy (
     content_id   TEXT PRIMARY KEY,
     umap_x       REAL,
@@ -91,3 +98,12 @@ def resolve_analysis_version(cache: sqlite3.Connection, stored: str) -> str:
     row = cache.execute("SELECT analysis_version FROM features WHERE analysis_version IS NOT NULL "
                         "GROUP BY analysis_version ORDER BY COUNT(*) DESC LIMIT 1").fetchone()
     return row[0] if row else stored
+
+
+def record_failure(cache: sqlite3.Connection, content_id: str, analysis_version: str, error: str) -> None:
+    """Mémorise un échec d'analyse (pas les fichiers introuvables : une clé USB peut revenir)."""
+    cache.execute(
+        "INSERT OR REPLACE INTO analyze_failures VALUES (?, ?, ?, ?)",
+        (content_id, analysis_version, error[:200], datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
+    cache.commit()
