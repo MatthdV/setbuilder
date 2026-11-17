@@ -11,7 +11,8 @@ from dataclasses import dataclass, field
 
 from setbuilder.bpm import bpm_compat
 from setbuilder.fit import energy_fit
-from setbuilder.harmony import camelot_compat
+from setbuilder.harmony import camelot_compat as _classic_compat
+from setbuilder.keymoves import key_move
 from setbuilder.scoring import Candidate
 
 # Labels neutres (donnée manquante) : n'émettent jamais de warning.
@@ -28,6 +29,17 @@ class ImpactReport:
     key_next: tuple[str, float]
     bpm_prev: tuple[str, float]
     warnings: list[str] = field(default_factory=list)
+
+
+def camelot_compat(a, b):
+    """Harmonie classique, mais un enchaînement prévu par la table (boost/drop/mood)
+    n'est jamais un « clash »."""
+    label, score = _classic_compat(a, b)
+    if score < _KEY_FLOOR:
+        move = key_move(a, b)
+        if move is not None:
+            return move.label, 0.6
+    return label, score
 
 
 def _applicable(dim: tuple[str, float]) -> bool:

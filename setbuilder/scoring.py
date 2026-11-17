@@ -17,6 +17,7 @@ import numpy as np
 from setbuilder.bpm import bpm_compat
 from setbuilder.fit import energy_fit, tag_bonus
 from setbuilder.harmony import camelot_compat
+from setbuilder.keymoves import key_move, move_score
 from setbuilder.vibe import vibe_score
 
 SCORING_VERSION = "scoring-v1"
@@ -65,12 +66,25 @@ class ScoreBreakdown:
     dimensions: dict[str, tuple[str, float]] = field(default_factory=dict)
 
 
+def key_dimension(prev: Candidate | None, cand: Candidate, target_energy: float) -> tuple[str, float]:
+    """Clé : même clé = 1.0 ; sinon table perfect/boost/drop/mood, sens d'énergie pris en
+    compte ; sinon compatibilité harmonique classique (relatif, ±1, clash...)."""
+    base = camelot_compat(prev.camelot if prev else None, cand.camelot)
+    if prev is None or base[0] == "key inconnue" or base[0] == "key ✓ (même)":
+        return base
+    move = key_move(prev.camelot, cand.camelot)
+    if move is None:
+        return base
+    delta = None if prev.energy is None else target_energy - prev.energy
+    return move.label, round(min(1.0, move_score(move, delta)), 3)
+
+
 def score_candidate(
     cand: Candidate, ctx: SlotContext, weights: Weights = DEFAULT_WEIGHTS
 ) -> ScoreBreakdown:
     prev = ctx.prev
     dims: dict[str, tuple[str, float]] = {
-        "key": camelot_compat(prev.camelot if prev else None, cand.camelot),
+        "key": key_dimension(prev, cand, ctx.target_energy),
         "bpm": bpm_compat(prev.bpm if prev else None, cand.bpm),
         "energy": energy_fit(cand.energy, ctx.target_energy),
         "vibe": vibe_score(prev.embedding if prev else None, cand.embedding),
