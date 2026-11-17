@@ -181,6 +181,8 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
         except ValueError:
             host = ""
         origin = request.headers.get("origin")
+        if request.headers.get("sec-fetch-site") == "cross-site":  # GET média sans Origin inclus
+            return JSONResponse(status_code=403, content={"detail": "origine non autorisée"})
         if host not in _LOCAL:
             return JSONResponse(status_code=403, content={"detail": "hôte non autorisé"})
         if origin and origin != "null":
@@ -239,6 +241,7 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     # Le chemin vient TOUJOURS de la table `tracks` (jamais d'un paramètre client).
     _NATIVE = {".mp3", ".wav", ".flac", ".m4a"}  # lisibles tels quels par le navigateur
     PREVIEW_SECONDS = 120
+    transcode_slots = threading.BoundedSemaphore(2)  # au plus 2 ffmpeg simultanés
 
     def _preview_path(content_id: str) -> str:
         row = conn.execute("SELECT file_path FROM tracks WHERE content_id = ?", (content_id,)).fetchone()
@@ -265,15 +268,19 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
         ffmpeg = shutil.which("ffmpeg")
         if ffmpeg is None:
             raise HTTPException(status_code=415, detail="ffmpeg_missing")
+        if not transcode_slots.acquire(timeout=5):
+            raise HTTPException(status_code=503, detail="busy")
         try:
             out = subprocess.run(
                 [ffmpeg, "-v", "error", "-ss", str(start), "-t", str(PREVIEW_SECONDS),
                  "-i", str(Path(path).resolve()), "-vn", "-ac", "2", "-ar", "44100",
-                 "-b:a", "160k", "-f", "mp3", "pipe:1"],
+                 "-b:a", "160k", "-fs", "4000000", "-f", "mp3", "pipe:1"],
                 capture_output=True, timeout=30, check=True,
             ).stdout
         except (subprocess.SubprocessError, OSError) as e:
             raise HTTPException(status_code=415, detail="transcode_failed") from e
+        finally:
+            transcode_slots.release()
         if not out:
             raise HTTPException(status_code=415, detail="transcode_failed")
         return Response(content=out, media_type="audio/mpeg")

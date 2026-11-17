@@ -1,6 +1,7 @@
 // Audio preview. One shared <audio>; any ▶ button calls previewToggle(cid).
 // Native formats stream the file (seek to 35% for a mid-track listen); others
 // (AIFF...) come as a 2-minute mp3 excerpt that starts at 35%.
+let _loadToken = 0;
 const player = { audio: new Audio(), cid: null, titleOf: null, onChange: () => {} };
 player.audio.preload = "none";
 
@@ -8,8 +9,9 @@ function isPlaying(cid) { return player.cid === cid && !player.audio.paused; }
 
 async function previewToggle(cid) {
   const a = player.audio;
-  if (player.cid === cid) { a.paused ? a.play().catch(() => {}) : a.pause(); return; }
+  if (player.cid === cid && a.src) { a.paused ? a.play().catch(() => {}) : a.pause(); return; }
   player.cid = cid;
+  const token = ++_loadToken;
   a.pause();
   _renderPlayer(true);
   player.onChange();
@@ -17,12 +19,13 @@ async function previewToggle(cid) {
   const start = Math.floor(dur * 0.35);
   try {
     const info = await (await fetch(`/tracks/${encodeURIComponent(cid)}/preview-info`)).json();
-    if (player.cid !== cid) return;  // another track was chosen meanwhile
+    if (token !== _loadToken) return;  // another track was chosen meanwhile
     if (info.detail) throw new Error(info.detail);
     a.src = `/tracks/${encodeURIComponent(cid)}/preview` + (info.native ? "" : `?start=${start}`);
     if (info.native && start) a.addEventListener("loadedmetadata", () => { a.currentTime = start; }, { once: true });
     await a.play();
   } catch (e) {
+    if (token !== _loadToken) return;  // stale failure must not clear the newer track
     player.cid = null;
     toast("Cannot play this track (file unreachable — drive unplugged? — or unsupported).", true);
     _renderPlayer(false);

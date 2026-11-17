@@ -56,3 +56,11 @@ def test_preview_errors(tmp_path):
     assert r.status_code == 404 and r.json()["detail"] == "file_missing"
     assert client.get("/tracks/a/preview", params={"start": -1}).status_code == 422
     assert client.get("/tracks/b/preview").status_code == 404              # pas de file_path
+
+
+def test_cross_site_fetch_rejected(tmp_path):
+    wav = tmp_path / "a.wav"
+    _tone(wav, "WAV")
+    client = _client(tmp_path, {"a": str(wav)})
+    assert client.get("/tracks/a/preview", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
+    assert client.get("/tracks/a/preview", headers={"Sec-Fetch-Site": "same-origin"}).status_code == 200
