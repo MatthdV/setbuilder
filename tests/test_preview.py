@@ -18,7 +18,8 @@ def _client(tmp_path, files):
         c.execute("UPDATE tracks SET file_path = ? WHERE content_id = ?", (fp, cid))
     c.commit()
     c.close()
-    return TestClient(create_app(path), raise_server_exceptions=False)
+    return TestClient(create_app(path, preview_cache_dir=str(tmp_path / 'pvcache')),
+                      raise_server_exceptions=False)
 
 
 def _tone(path, fmt, seconds=3, sr=22050):
@@ -44,9 +45,13 @@ def test_aiff_is_transcoded_to_mp3_excerpt(tmp_path):
     _tone(aiff, "AIFF")
     client = _client(tmp_path, {"b": str(aiff)})
     assert client.get("/tracks/b/preview-info").json()["native"] is False
-    r = client.get("/tracks/b/preview", params={"start": 1})
+    r = client.get("/tracks/b/preview")
     assert r.status_code == 200 and r.headers["content-type"] == "audio/mpeg"
     assert len(r.content) > 1000
+    # le mp3 complet est mis en cache et seekable (Range) : pas de limite de 2 minutes
+    assert list((tmp_path / "pvcache").glob("b-*.mp3"))
+    r2 = client.get("/tracks/b/preview", headers={"Range": "bytes=100-199"})
+    assert r2.status_code == 206 and len(r2.content) == 100
 
 
 def test_preview_errors(tmp_path):
@@ -54,7 +59,6 @@ def test_preview_errors(tmp_path):
     assert client.get("/tracks/zzz/preview").status_code == 404           # id inconnu
     r = client.get("/tracks/a/preview")                                    # fichier absent
     assert r.status_code == 404 and r.json()["detail"] == "file_missing"
-    assert client.get("/tracks/a/preview", params={"start": -1}).status_code == 422
     assert client.get("/tracks/b/preview").status_code == 404              # pas de file_path
 
 

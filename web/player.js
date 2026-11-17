@@ -1,6 +1,6 @@
 // Audio preview. One shared <audio>; any ▶ button calls previewToggle(cid).
-// Native formats stream the file (seek to 35% for a mid-track listen); others
-// (AIFF...) come as a 2-minute mp3 excerpt that starts at 35%.
+// Starts at 35% for a mid-track listen. Seek: drag the bar, click a 10% tick,
+// ←/→ = ±15 s (Shift: ±60 s), keys 0-9 = jump to 0-90 %.
 let _loadToken = 0;
 const player = { audio: new Audio(), cid: null, loadedCid: null, titleOf: null, onChange: () => {} };
 player.audio.preload = "none";
@@ -15,6 +15,7 @@ async function previewToggle(cid) {
   player.loadedCid = null;
   a.pause();
   _renderPlayer(true);
+  document.getElementById("pl-time").textContent = "loading…";  // AIFF: first play converts the file once
   player.onChange();
   const dur = (typeof durOf === "function" && durOf(cid)) || 0;
   const start = Math.floor(dur * 0.35);
@@ -23,8 +24,9 @@ async function previewToggle(cid) {
     if (token !== _loadToken) return;  // another track was chosen meanwhile
     if (info.detail) throw new Error(info.detail);
     player.loadedCid = cid;
-    a.src = `/tracks/${encodeURIComponent(cid)}/preview` + (info.native ? "" : `?start=${start}`);
-    if (info.native && start) a.addEventListener("loadedmetadata", () => { a.currentTime = start; }, { once: true });
+    a.src = `/tracks/${encodeURIComponent(cid)}/preview`;
+    // every format is seekable over the WHOLE track (non-native ones are served as a cached full mp3)
+    if (start) a.addEventListener("loadedmetadata", () => { a.currentTime = start; }, { once: true });
     await a.play();
   } catch (e) {
     if (token !== _loadToken) return;  // stale failure must not clear the newer track
@@ -58,6 +60,13 @@ function initPlayer(titleOf, onChange) {
     document.getElementById("pl-time").textContent = _fmt(a.currentTime) + " / " + _fmt(a.duration);
   });
   for (const ev of ["play", "pause", "ended"]) a.addEventListener(ev, () => { _renderPlayer(true); onChange(); });
+  const jump = (dt) => { if (a.duration) a.currentTime = Math.max(0, Math.min(a.duration - 0.5, a.currentTime + dt)); };
+  document.addEventListener("keydown", (e) => {
+    if (!player.cid || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.code === "ArrowRight") { e.preventDefault(); jump(e.shiftKey ? 60 : 15); }
+    else if (e.code === "ArrowLeft") { e.preventDefault(); jump(e.shiftKey ? -60 : -15); }
+    else if (/^Digit[0-9]$/.test(e.code) && a.duration) { a.currentTime = (Number(e.code.slice(5)) / 10) * a.duration; }
+  });
   document.addEventListener("keydown", (e) => {
     if (e.code === "Space" && player.cid && !/INPUT|SELECT|TEXTAREA|BUTTON/.test(e.target.tagName)) {
       e.preventDefault(); previewToggle(player.cid);

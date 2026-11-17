@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <noscript><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
-  <link rel="stylesheet" href="/static/tokens.css?v=13" />
-  <link rel="stylesheet" href="/static/app.css?v=13" />
+  <link rel="stylesheet" href="/static/tokens.css?v=14" />
+  <link rel="stylesheet" href="/static/app.css?v=14" />
 </head>
 <body>
   <div class="sheet">
@@ -59,7 +59,7 @@
         <div class="player" id="player" hidden>
           <button id="pl-btn" title="Play / pause (space)">▶</button>
           <span class="pl-title" id="pl-title"></span>
-          <input type="range" id="pl-seek" min="0" max="1000" value="0" />
+          <input type="range" id="pl-seek" min="0" max="1000" value="0" step="1" title="Seek (←/→ ±15 s, 0-9 jump)" />
           <span class="pl-time" id="pl-time">0:00 / 0:00</span>
           <button id="pl-stop" title="Stop">■</button>
         </div>
@@ -127,14 +127,14 @@
   <div class="hovercard" id="hovercard"></div>
   <div id="toast" class="toast"></div>
 
-  <script src="/static/player.js?v=13"></script>
-  <script src="/static/camelot.js?v=13"></script>
-  <script src="/static/curve.js?v=13"></script>
-  <script src="/static/timeline.js?v=13"></script>
-  <script src="/static/suggestions.js?v=13"></script>
-  <script src="/static/galaxy.js?v=13"></script>
-  <script src="/static/analyze.js?v=13"></script>
-  <script src="/static/library.js?v=13"></script>
-  <script src="/static/app.js?v=13"></script>
+  <script src="/static/player.js?v=14"></script>
+  <script src="/static/camelot.js?v=14"></script>
+  <script src="/static/curve.js?v=14"></script>
+  <script src="/static/timeline.js?v=14"></script>
+  <script src="/static/suggestions.js?v=14"></script>
+  <script src="/static/galaxy.js?v=14"></script>
+  <script src="/static/analyze.js?v=14"></script>
+  <script src="/static/library.js?v=14"></script>
+  <script src="/static/app.js?v=14"></script>
 </body>
 </html>

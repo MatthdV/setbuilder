@@ -8,6 +8,7 @@ routes délèguent aux couches métier (sets_repo, suggest, impact) et lisent
 from __future__ import annotations
 
 import json
+import os
 import logging
 import shutil
 import subprocess
@@ -183,7 +184,7 @@ def _default_rekordbox_probe() -> bool:
 
 
 def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
-               rekordbox_probe=None) -> FastAPI:
+               rekordbox_probe=None, preview_cache_dir=None) -> FastAPI:
     rb_provider = rb_provider or _default_rb_provider
     analyze_launcher = analyze_launcher or spawn_analyze
     rekordbox_probe = rekordbox_probe or _default_rekordbox_probe
@@ -265,7 +266,6 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     # --- Écoute (preview) -------------------------------------------------------
     # Le chemin vient TOUJOURS de la table `tracks` (jamais d'un paramètre client).
     _NATIVE = {".mp3", ".wav", ".flac", ".m4a"}  # lisibles tels quels par le navigateur
-    PREVIEW_SECONDS = 120
     transcode_slots = threading.BoundedSemaphore(2)  # au plus 2 ffmpeg simultanés
 
     def _preview_path(content_id: str) -> str:
@@ -279,36 +279,68 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
             raise HTTPException(status_code=404, detail="file_missing")  # clé USB débranchée ?
         return resolved
 
-    @app.get("/tracks/{content_id}/preview-info")
-    def preview_info(content_id: str):
-        path = _preview_path(content_id)
-        native = Path(path).suffix.lower() in _NATIVE
-        return {"native": native, "seconds": None if native else PREVIEW_SECONDS}
+    cache_dir = Path(preview_cache_dir or os.environ.get("SETBUILDER_PREVIEW_CACHE")
+                     or Path.home() / ".cache" / "setbuilder" / "preview")
+    _locks: dict[str, threading.Lock] = {}
+    _locks_guard = threading.Lock()
+    MAX_CACHED = 150  # fichiers mp3 de preview gardés (les plus récents)
 
-    @app.get("/tracks/{content_id}/preview")
-    def preview(content_id: str, start: float = Query(0, ge=0, le=36000)):
-        path = _preview_path(content_id)
-        if Path(path).suffix.lower() in _NATIVE:
-            return FileResponse(path)  # Range géré par Starlette (seek navigateur)
+    def _prune_cache() -> None:
+        try:
+            files = sorted(cache_dir.glob("*.mp3"), key=lambda f: f.stat().st_mtime, reverse=True)
+            for old in files[MAX_CACHED:]:
+                old.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def _transcoded(content_id: str, path: str) -> Path:
+        """mp3 COMPLET du morceau (cache disque) : permet le seek sur toute la durée."""
+        src = Path(path).resolve()
+        st = src.stat()
+        out = cache_dir / f"{content_id}-{st.st_mtime_ns}-{st.st_size}.mp3"
+        if out.is_file():
+            out.touch()
+            return out
         ffmpeg = shutil.which("ffmpeg")
         if ffmpeg is None:
             raise HTTPException(status_code=415, detail="ffmpeg_missing")
-        if not transcode_slots.acquire(timeout=5):
-            raise HTTPException(status_code=503, detail="busy")
-        try:
-            out = subprocess.run(
-                [ffmpeg, "-v", "error", "-ss", str(start), "-t", str(PREVIEW_SECONDS),
-                 "-i", str(Path(path).resolve()), "-vn", "-ac", "2", "-ar", "44100",
-                 "-b:a", "160k", "-fs", "4000000", "-f", "mp3", "pipe:1"],
-                capture_output=True, timeout=30, check=True,
-            ).stdout
-        except (subprocess.SubprocessError, OSError) as e:
-            raise HTTPException(status_code=415, detail="transcode_failed") from e
-        finally:
-            transcode_slots.release()
-        if not out:
-            raise HTTPException(status_code=415, detail="transcode_failed")
-        return Response(content=out, media_type="audio/mpeg")
+        with _locks_guard:
+            lock = _locks.setdefault(out.name, threading.Lock())
+        with lock:  # une seule conversion par morceau, même si on clique plusieurs fois
+            if out.is_file():
+                return out
+            if not transcode_slots.acquire(timeout=60):
+                raise HTTPException(status_code=503, detail="busy")
+            tmp = out.with_suffix(".part")
+            try:
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                subprocess.run(
+                    [ffmpeg, "-v", "error", "-y", "-i", str(src), "-vn", "-ac", "2", "-ar", "44100",
+                     "-b:a", "128k", "-f", "mp3", str(tmp)],
+                    capture_output=True, timeout=180, check=True,
+                )
+                if not tmp.is_file() or tmp.stat().st_size == 0:
+                    raise HTTPException(status_code=415, detail="transcode_failed")
+                os.replace(tmp, out)
+            except (subprocess.SubprocessError, OSError) as e:
+                tmp.unlink(missing_ok=True)
+                raise HTTPException(status_code=415, detail="transcode_failed") from e
+            finally:
+                transcode_slots.release()
+            _prune_cache()
+        return out
+
+    @app.get("/tracks/{content_id}/preview-info")
+    def preview_info(content_id: str):
+        path = _preview_path(content_id)
+        return {"native": Path(path).suffix.lower() in _NATIVE}
+
+    @app.get("/tracks/{content_id}/preview")
+    def preview(content_id: str):
+        path = _preview_path(content_id)
+        if Path(path).suffix.lower() in _NATIVE:
+            return FileResponse(path)  # Range géré par Starlette (seek navigateur)
+        return FileResponse(_transcoded(content_id, path), media_type="audio/mpeg")
 
     @app.post("/sets")
     def post_set(body: SetCreate):
