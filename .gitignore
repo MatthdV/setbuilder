@@ -9,3 +9,13 @@ setbuilder.db
 dist/
 *.egg-info/
 backups/
+
+# front redesign scratch mockups
+web/_mockup.html
+web/_fonts.html
+web/_v2.html
+web/_v3.html
+web/_v4.html
+
+# dev-only launch config (absolute local db path)
+.claude/

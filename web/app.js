@@ -1,5 +1,6 @@
-// Orchestrateur de l'ecran unique. Consomme l'API du plan 4 ; aucune logique
-// de scoring cote client. Etat minimal, re-render apres chaque mutation.
+// Orchestrator (single screen). Consumes the API; no scoring client-side.
+// Minimal state, re-render after each mutation. English UI; server `detail`
+// strings (French) are never shown — statuses map to English client messages.
 const API = location.origin;
 
 async function _req(method, path, body) {
@@ -14,183 +15,367 @@ const post = (p, b) => _req("POST", p, b);
 const put = (p, b) => _req("PUT", p, b);
 const del = (p) => _req("DELETE", p);
 
-const state = { set: null, library: [], galaxy: [], selPos: null, titleById: {}, energyById: {},
-                analyzePoll: null };
+// English client messages by status (we do NOT surface server `detail`).
+function apiMessage(e, map, fallback) {
+  return (map && map[e && e.status]) || fallback;
+}
+
+const state = {
+  set: null, library: [], galaxy: [], byId: {},
+  selPos: null, candidateId: null, analyzePoll: null, libView: null,
+  suggReq: 0,
+};
+
+const $ = (id) => document.getElementById(id);
 
 function toast(msg, isErr) {
-  const t = document.getElementById("toast");
+  const t = $("toast");
   t.textContent = msg;
   t.className = "toast show" + (isErr ? " err" : "");
   setTimeout(() => t.classList.remove("show"), 4000);
 }
 
-const titleOf = (cid) => state.titleById[cid] || cid;
+const metaOf = (cid) => state.byId[cid] || null;
+const titleOf = (cid) => { const m = metaOf(cid); return m ? ((m.artist ? m.artist + " — " : "") + (m.title || cid)) : cid; };
+const keyOf = (cid) => { const m = metaOf(cid); return m ? m.camelot : null; };
+const energyOf = (cid) => { const m = metaOf(cid); return m && m.energy_score != null ? m.energy_score : null; };
+const durOf = (cid) => { const m = metaOf(cid); return m && m.duration_s != null ? m.duration_s : null; };
 
-// ---- chargements ----
+function fmtLen(sec) {
+  if (!sec || sec <= 0) return "—";
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const mm = String(m).padStart(2, "0"), ss = String(s).padStart(2, "0");
+  return h ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
+}
+
+// ---- loads ----
 async function loadLibrary() {
   state.library = await get("/library");
-  state.titleById = {};
-  state.energyById = {};
-  state.library.forEach((t) => {
-    state.titleById[t.content_id] = (t.artist ? t.artist + " — " : "") + (t.title || t.content_id);
-    if (t.energy_score != null) state.energyById[t.content_id] = t.energy_score;
-  });
-  renderLibrary(document.getElementById("lib-search").value);
+  state.byId = {};
+  state.library.forEach((t) => { state.byId[t.content_id] = t; });
+  state.libView.setData(state.library);
 }
-
 async function loadGalaxy() { state.galaxy = await get("/galaxy"); }
-
 async function loadSets() {
   const sets = await get("/sets");
-  const sel = document.getElementById("f-existing");
+  const sel = $("f-existing");
   sel.textContent = "";
-  const def = document.createElement("option"); def.value = ""; def.textContent = "— charger —"; sel.append(def);
+  const def = document.createElement("option"); def.value = ""; def.textContent = "— load set —"; sel.append(def);
   sets.forEach((s) => { const o = document.createElement("option"); o.value = s.set_id; o.textContent = s.name; sel.append(o); });
+  if (state.set) sel.value = state.set.set_id;
 }
-
 async function openSet(setId) {
   state.set = await get("/sets/" + setId);
   state.selPos = null;
+  renderImpact($("impact"), null);
   render();
+  renderSuggestionsPanel();
 }
 
-// ---- rendu ----
-function renderLibrary(filter) {
-  const list = document.getElementById("lib-list");
-  list.textContent = "";
-  const q = (filter || "").toLowerCase();
-  state.library
-    .filter((t) => !q || [t.title, t.artist, t.genre].some((v) => (v || "").toLowerCase().includes(q)))
-    .slice(0, 200)
-    .forEach((t) => {
-      const row = document.createElement("div");
-      row.className = "lib-row";
-      const name = document.createElement("span");
-      name.textContent = (t.artist ? t.artist + " — " : "") + (t.title || t.content_id);
-      const bpm = document.createElement("span"); bpm.className = "meta"; bpm.textContent = t.bpm ? Math.round(t.bpm) : "—";
-      const key = document.createElement("span"); key.className = "meta"; key.textContent = t.camelot || "—";
-      const en = document.createElement("span"); en.className = "meta"; en.textContent = t.energy_score != null ? t.energy_score.toFixed(1) : "—";
-      row.append(name, bpm, key, en);
-      row.addEventListener("click", () => { document.getElementById("force-cid").value = t.content_id; });
-      list.append(row);
-    });
+// ---- galaxy ----
+function renderGalaxy() {
+  const setPath = state.set ? state.set.slots.filter((x) => x.content_id).map((x) => x.content_id) : [];
+  const forced = state.set ? state.set.slots.filter((x) => x.is_forced).map((x) => x.content_id) : [];
+  drawGalaxy($("galaxy-canvas"), state.galaxy, state.byId, setPath, forced, {
+    onHover: onGalaxyHover,
+    onSelect: (cid) => setCandidate(cid),
+  });
 }
 
+function onGalaxyHover(cid, ev) {
+  const hc = $("hovercard");
+  if (!cid || !ev) { hc.classList.remove("show"); return; }
+  const m = metaOf(cid);
+  hc.textContent = "";
+  const t = document.createElement("div"); t.className = "hc-t"; t.textContent = m ? (m.title || cid) : cid;
+  const s = document.createElement("div"); s.className = "hc-s"; s.textContent = m ? [m.artist, m.genre || m.top_genre].filter(Boolean).join(" · ") : "";
+  const row = document.createElement("div"); row.className = "hc-row";
+  row.append(keyChip(keyOf(cid)));
+  const bpm = document.createElement("span"); bpm.className = "num"; bpm.textContent = (m && m.bpm != null) ? Math.round(m.bpm) : "—";
+  row.append(bpm, energyBar(energyOf(cid)));
+  hc.append(t, s, row);
+  hc.style.left = Math.min(ev.clientX + 14, window.innerWidth - 220) + "px";
+  hc.style.top = Math.min(ev.clientY + 14, window.innerHeight - 90) + "px";
+  hc.classList.add("show");
+}
+
+// ---- render ----
 function render() {
-  if (!state.set) return;
   const s = state.set;
-  drawCurve(document.getElementById("curve-svg"), s.curve_points, s.slots, state.energyById);
-  drawTimeline(document.getElementById("timeline"), s.slots, state.selPos, selectSlot);
-  const setPath = s.slots.filter((x) => x.content_id).map((x) => x.content_id);
-  const forcedIds = s.slots.filter((x) => x.is_forced).map((x) => x.content_id);
-  drawGalaxy(document.getElementById("galaxy-canvas"), state.galaxy, setPath, forcedIds, titleOf);
-  document.getElementById("sel-pos").textContent = state.selPos == null ? "—" : state.selPos + 1;
+  // readouts
+  if (s) {
+    const filled = s.slots.filter((x) => x.content_id);
+    const len = filled.reduce((a, x) => a + (durOf(x.content_id) || 0), 0);
+    const peaks = filled.map((x) => energyOf(x.content_id)).filter((e) => e != null);
+    $("r-slots").textContent = s.slots.length;
+    $("r-length").textContent = fmtLen(len);
+    $("r-peak").textContent = peaks.length ? Math.max(...peaks).toFixed(1) : "—";
+    $("slots-fig").textContent = `${filled.length}/${s.slots.length} FILLED`;
+  } else {
+    $("r-slots").textContent = $("r-length").textContent = $("r-peak").textContent = "—";
+    $("slots-fig").textContent = "—";
+  }
+
+  if (s) {
+    drawCurve($("curve-svg"), s.curve_points, s.slots, energyOf);
+    drawTimeline($("timeline"), s.slots, state.selPos, selectSlot, titleOf, keyOf);
+  } else {
+    $("curve-svg").innerHTML = "";
+    $("curve-alert").classList.remove("show");
+    $("timeline").textContent = "";
+  }
+  renderGalaxy();
+
+  $("sel-pos").textContent = state.selPos == null ? "—" : state.selPos + 1;
+  updateButtons();
 }
 
+function updateButtons() {
+  const hasSet = !!state.set;
+  const hasSlot = hasSet && state.selPos != null;
+  const hasCand = !!state.candidateId;
+  const filledAtSel = hasSlot && !!state.set.slots[state.selPos].content_id;
+  $("btn-export").disabled = !hasSet;
+  $("btn-delete").disabled = !hasSet;
+  $("btn-place").disabled = !(hasSlot && hasCand);
+  $("btn-force").disabled = !(hasSlot && hasCand);
+  $("btn-clear-slot").disabled = !filledAtSel;
+}
+
+// ---- candidate selection (library row / galaxy click) ----
+function setCandidate(cid) {
+  state.candidateId = cid;
+  if (state.libView) state.libView.setSelected(cid);
+  const strip = $("sel-strip");
+  if (cid) {
+    $("sel-name").textContent = titleOf(cid);
+    strip.classList.remove("hidden");
+  } else {
+    strip.classList.add("hidden");
+  }
+  updateButtons();
+}
+function clearCandidate() { setCandidate(null); if (state.libView) state.libView.setSelected(null); }
+
+// ---- slot / suggestions ----
 async function selectSlot(pos) {
   state.selPos = pos;
   render();
-  const breakdowns = await get(`/sets/${state.set.set_id}/slots/${pos}/suggestions?limit=15`);
-  renderSuggestions(document.getElementById("sugg-list"), breakdowns, titleOf, (cid) => placeTrack(pos, cid));
-  renderImpact(document.getElementById("impact"), null);
+  renderSuggestionsPanel();
+}
+async function renderSuggestionsPanel() {
+  const listEl = $("sugg-list");
+  if (!state.set || state.selPos == null) {
+    listEl.textContent = "";
+    const p = document.createElement("div"); p.className = "empty-note";
+    p.textContent = state.set ? "Select a slot to see suggestions." : "Create or load a set to start.";
+    listEl.append(p);
+    return;
+  }
+  listEl.textContent = "";
+  listEl.append(Object.assign(document.createElement("div"), { className: "loading", textContent: "loading suggestions" }));
+  // Guard against out-of-order responses: capture the request's set+slot and a
+  // token; ignore the response if the selection has changed since.
+  const reqSet = state.set.set_id, reqPos = state.selPos, reqId = ++state.suggReq;
+  try {
+    const breakdowns = await get(`/sets/${reqSet}/slots/${reqPos}/suggestions?limit=15`);
+    if (reqId !== state.suggReq) return;
+    renderSuggestions(listEl, breakdowns, titleOf, keyOf, (cid) => placeTrack(reqPos, cid));
+  } catch (e) {
+    if (reqId !== state.suggReq) return;
+    listEl.textContent = "";
+    const p = document.createElement("div"); p.className = "empty-note";
+    p.textContent = "Could not load suggestions.";
+    listEl.append(p);
+  }
+  if (reqId === state.suggReq) renderImpact($("impact"), null);
 }
 
 async function placeTrack(pos, cid, isAnchor) {
-  await put(`/sets/${state.set.set_id}/slots/${pos}`, { content_id: cid, is_anchor: !!isAnchor });
-  await openSet(state.set.set_id);
-  state.selPos = pos; render();
-}
-
-async function forceTrack(pos, cid) {
-  const res = await post(`/sets/${state.set.set_id}/slots/${pos}/force`, { content_id: cid });
-  await get("/sets/" + state.set.set_id).then((s) => { state.set = s; });
-  state.selPos = pos; render();
-  renderImpact(document.getElementById("impact"), res.impact);
-}
-
-// ---- analyse (plan 6) ----
-async function refreshAnalyze() {
-  const el = document.getElementById("analyze-panel");
-  const [pend, status] = await Promise.all([get("/analyze/pending"), get("/analyze/status")]);
-  renderAnalyze(el, pend, status, startAnalyze);
-  if (status.state === "running" && !state.analyzePoll) {
-    state.analyzePoll = setInterval(pollAnalyze, 2000);
+  try {
+    await put(`/sets/${state.set.set_id}/slots/${pos}`, { content_id: cid, is_anchor: !!isAnchor });
+    await openSet(state.set.set_id);
+    state.selPos = pos; render(); renderSuggestionsPanel();
+    toast("Track placed.");
+  } catch (e) {
+    toast(apiMessage(e, { 404: "Slot or track not found." }, "Could not place track."), true);
   }
-  return status;
+}
+async function forceTrack(pos, cid) {
+  try {
+    const res = await post(`/sets/${state.set.set_id}/slots/${pos}/force`, { content_id: cid });
+    state.set = await get("/sets/" + state.set.set_id);
+    state.selPos = pos; render(); renderSuggestionsPanel();
+    renderImpact($("impact"), res.impact);
+    toast("Track forced.");
+  } catch (e) {
+    toast(apiMessage(e, { 404: "Track not found in library." }, "Could not force track."), true);
+  }
+}
+async function clearSlot(pos) {
+  try {
+    await del(`/sets/${state.set.set_id}/slots/${pos}`);
+    await openSet(state.set.set_id);
+    state.selPos = pos; render(); renderSuggestionsPanel();
+    toast("Slot cleared.");
+  } catch (e) {
+    toast(apiMessage(e, { 404: "Slot not found." }, "Could not clear slot."), true);
+  }
 }
 
+// ---- analyze ----
+async function refreshAnalyze() {
+  const el = $("analyze-panel");
+  try {
+    const [pend, status] = await Promise.all([get("/analyze/pending"), get("/analyze/status")]);
+    renderAnalyze(el, pend, status, startAnalyze);
+    if (status.state === "running" && !state.analyzePoll) {
+      state.analyzePoll = setInterval(pollAnalyze, 2000);
+    }
+    return status;
+  } catch (e) {
+    el.textContent = "";
+    el.append(Object.assign(document.createElement("div"), { className: "an-banner err", textContent: "Analysis status unavailable." }));
+  }
+}
 async function pollAnalyze() {
-  const status = await get("/analyze/status");
+  let status;
+  try { status = await get("/analyze/status"); } catch { return; }
   if (["done", "error", "idle", "stale"].includes(status.state)) {
     clearInterval(state.analyzePoll);
     state.analyzePoll = null;
-    await Promise.all([refreshAnalyze(), loadGalaxy()]);  // galaxy a pu se peupler
+    // analysis populates energy + galaxy -> reload BOTH, then re-render
+    await Promise.all([loadLibrary().catch(() => {}), loadGalaxy().catch(() => {})]);
+    await refreshAnalyze();
     render();
+    if (state.set) renderSuggestionsPanel();
     return;
   }
-  renderAnalyze(document.getElementById("analyze-panel"),
-    await get("/analyze/pending"), status, startAnalyze);
+  renderAnalyze($("analyze-panel"), await get("/analyze/pending").catch(() => ({})), status, startAnalyze);
 }
-
 async function startAnalyze() {
   try {
     await post("/analyze");
-    toast("Analyse lancée.");
+    toast("Analysis started.");
     await refreshAnalyze();
     if (!state.analyzePoll) state.analyzePoll = setInterval(pollAnalyze, 2000);
   } catch (e) {
-    const msg = e.status === 409 ? (e.detail || "Analyse déjà en cours ou Rekordbox ouvert.")
-                                 : (e.detail || "Lancement impossible.");
-    toast(msg, true);
+    toast(apiMessage(e, { 409: "Analysis already running or Rekordbox is open." }, "Could not start analysis."), true);
     await refreshAnalyze();
   }
 }
 
+// ---- export ----
 async function exportSet() {
-  if (!state.set) { toast("Aucun set chargé.", true); return; }
-  if (!confirm("Exporter vers Rekordbox ?\nRekordbox doit être FERMÉ. Un backup auto est fait avant écriture.")) return;
+  if (!state.set) { toast("No set loaded.", true); return; }
+  if (!confirm("Export to Rekordbox?\nRekordbox must be CLOSED. An automatic backup is made before writing.")) return;
   try {
     const r = await post(`/sets/${state.set.set_id}/export`);
-    toast(`Playlist « ${r.playlist} » : ${r.n_tracks} morceaux. Backup : ${r.backup}`);
+    toast(`Playlist "${r.playlist}": ${r.n_tracks} tracks. Backup: ${r.backup}`);
   } catch (e) {
-    const msg = { 400: "Set vide : rien à exporter.", 409: "Ferme Rekordbox et réessaie.",
-                  503: "Extra Rekordbox absent (uv sync --extra rekordbox)." }[e.status] || (e.detail || "Échec export.");
-    toast(msg, true);
+    toast(apiMessage(e, {
+      400: "Empty set: nothing to export.",
+      409: "Close Rekordbox and try again.",
+      503: "Rekordbox extra missing (uv sync --extra rekordbox).",
+    }, "Export failed."), true);
+  }
+}
+
+// ---- create / delete set ----
+async function createSet() {
+  const mode = $("f-mode").value;
+  const target = parseFloat($("f-target").value);
+  const nSlots = parseInt($("f-slots").value, 10);
+  const body = {
+    name: $("f-name").value || "Set",
+    mode, target, n_slots: nSlots,
+    curve_points: [[0, 2], [0.5, 9], [1, 4]],
+  };
+  try {
+    const { set_id } = await post("/sets", body);
+    await loadSets();
+    $("f-existing").value = set_id;
+    await openSet(set_id);
+    toast("Set created.");
+  } catch (e) {
+    toast(apiMessage(e, { 422: "Invalid set parameters." }, "Could not create set."), true);
+  }
+}
+async function deleteSet() {
+  if (!state.set) return;
+  if (!confirm(`Delete set "${state.set.name}"? This cannot be undone.`)) return;
+  const id = state.set.set_id;
+  try {
+    await del("/sets/" + id);
+    state.set = null; state.selPos = null; clearCandidate();
+    await loadSets();
+    render(); renderSuggestionsPanel();
+    toast("Set deleted.");
+  } catch (e) {
+    toast(apiMessage(e, {}, "Could not delete set."), true);
   }
 }
 
 // ---- wiring ----
 function wire() {
-  document.getElementById("btn-create").addEventListener("click", async () => {
-    const mode = document.getElementById("f-mode").value;
-    const target = parseFloat(document.getElementById("f-target").value);
-    const nSlots = parseInt(document.getElementById("f-slots").value, 10);
-    const body = {
-      name: document.getElementById("f-name").value || "Set",
-      mode, target, n_slots: nSlots,
-      curve_points: [[0, 2], [0.5, 9], [1, 4]],
-    };
-    try {
-      const { set_id } = await post("/sets", body);
-      await loadSets();
-      document.getElementById("f-existing").value = set_id;
-      await openSet(set_id);
-      toast("Set créé.");
-    } catch (e) { toast(e.detail || "Création impossible.", true); }
+  state.libView = createLibraryView($("lib-list"), {
+    onSelect: (t) => setCandidate(t.content_id),
+    onCount: (shown, total) => {
+      $("lib-count").textContent = shown === total ? `${total} tracks` : `${shown} / ${total}`;
+    },
   });
 
-  document.getElementById("f-existing").addEventListener("change", (ev) => { if (ev.target.value) openSet(ev.target.value); });
-  document.getElementById("lib-search").addEventListener("input", (ev) => renderLibrary(ev.target.value));
-  document.getElementById("btn-force").addEventListener("click", () => {
-    if (state.selPos == null) { toast("Sélectionne un slot.", true); return; }
-    const cid = document.getElementById("force-cid").value.trim();
-    if (cid) forceTrack(state.selPos, cid);
+  $("btn-create").addEventListener("click", createSet);
+  $("btn-delete").addEventListener("click", deleteSet);
+  $("f-existing").addEventListener("change", (ev) => { if (ev.target.value) openSet(ev.target.value); });
+  $("lib-search").addEventListener("input", (ev) => state.libView.setQuery(ev.target.value));
+  $("btn-export").addEventListener("click", exportSet);
+
+  // sortable headers
+  document.querySelectorAll(".lhead span[data-sort]").forEach((h) => {
+    h.addEventListener("click", () => {
+      const { key, dir } = state.libView.setSort(h.dataset.sort);
+      document.querySelectorAll(".lhead span").forEach((x) => x.classList.remove("sorted", "desc"));
+      h.classList.add("sorted"); if (dir < 0) h.classList.add("desc");
+    });
   });
-  document.getElementById("btn-export").addEventListener("click", exportSet);
+
+  // candidate place / force / clear
+  $("btn-place").addEventListener("click", () => {
+    if (state.selPos == null) { toast("Select a slot.", true); return; }
+    if (!state.candidateId) { toast("Select a track.", true); return; }
+    placeTrack(state.selPos, state.candidateId);
+  });
+  $("btn-force").addEventListener("click", () => {
+    if (state.selPos == null) { toast("Select a slot.", true); return; }
+    if (!state.candidateId) { toast("Select a track.", true); return; }
+    forceTrack(state.selPos, state.candidateId);
+  });
+  $("btn-clear-slot").addEventListener("click", () => {
+    if (state.selPos == null) { toast("Select a slot.", true); return; }
+    clearSlot(state.selPos);
+  });
+  $("sel-clear").addEventListener("click", clearCandidate);
+
+  // redraw galaxy on resize (DPR/backing-store)
+  let rz = false;
+  window.addEventListener("resize", () => {
+    if (rz) return; rz = true;
+    requestAnimationFrame(() => { rz = false; renderGalaxy(); });
+  });
 }
 
 async function boot() {
   wire();
-  await Promise.all([loadLibrary(), loadGalaxy(), loadSets(), refreshAnalyze()]);
+  // library + galaxy first so the screen is useful without a set
+  try {
+    await Promise.all([loadLibrary(), loadGalaxy()]);
+  } catch (e) {
+    toast("Could not load library or galaxy.", true);
+  }
+  render();
+  renderSuggestionsPanel();
+  await Promise.all([loadSets().catch(() => {}), refreshAnalyze()]);
 }
 boot();

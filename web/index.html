@@ -1,82 +1,126 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>setbuilder</title>
-  <link rel="stylesheet" href="/static/tokens.css" />
-  <link rel="stylesheet" href="/static/app.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/tokens.css?v=8" />
+  <link rel="stylesheet" href="/static/app.css?v=8" />
 </head>
 <body>
-  <div class="app">
+  <div class="sheet">
+    <i class="reg tl"></i><i class="reg tr"></i><i class="reg bl"></i><i class="reg br"></i>
 
-    <section id="zone-header" class="zone">
-      <h2>Set</h2>
-      <div class="header-row">
-        <div class="field"><label>Nom</label><input id="f-name" class="wide" value="Nouveau set" /></div>
-        <div class="field"><label>Mode</label>
-          <select id="f-mode"><option value="count">nombre</option><option value="duration">durée</option></select>
+    <div class="mast">
+      <div class="plate">
+        <span class="rev" id="rev-tag">REV_07</span>
+        <h1>SETBUILDER</h1>
+        <div class="sub">DJ Set Constructor — Local — Rekordbox</div>
+      </div>
+      <div class="readout">
+        <div class="cell"><span class="lbl">Slots</span><span class="big" id="r-slots">—</span></div>
+        <div class="cell"><span class="lbl">Length</span><span class="big" id="r-length">—</span></div>
+        <div class="cell"><span class="lbl">Peak</span><span class="big" id="r-peak">—</span></div>
+        <button class="exp" id="btn-export" disabled>Export<span class="haz"></span></button>
+      </div>
+    </div>
+
+    <div class="body">
+      <!-- LEFT: controls + library -->
+      <div class="left">
+        <div class="cmd">
+          <div class="f"><span class="lbl">Name</span><input id="f-name" value="New set" /></div>
+          <div class="f"><span class="lbl">Mode</span>
+            <select id="f-mode"><option value="count">count</option><option value="duration">duration</option></select>
+          </div>
+          <div class="f"><span class="lbl">Target</span><input id="f-target" class="sm" type="number" value="12" /></div>
+          <div class="f"><span class="lbl">Slots</span><input id="f-slots" class="sm" type="number" value="12" /></div>
+          <button class="go" id="btn-create">Create</button>
+          <div class="f"><span class="lbl">Load</span>
+            <select id="f-existing"><option value="">— load set —</option></select>
+          </div>
+          <button class="ghost" id="btn-delete" disabled>Delete set</button>
         </div>
-        <div class="field"><label>Cible</label><input id="f-target" type="number" value="12" /></div>
-        <div class="field"><label>Slots</label><input id="f-slots" type="number" value="12" /></div>
-        <div class="field"><label>&nbsp;</label><button id="btn-create" class="primary">Créer</button></div>
-        <div class="field"><label>Sets</label>
-          <select id="f-existing"><option value="">— charger —</option></select>
+
+        <div class="search">
+          <span class="p">&gt;</span>
+          <input id="lib-search" placeholder="filter — title / artist / genre / key / bpm" />
+          <span class="lbl" id="lib-count">loading…</span>
+        </div>
+
+        <div class="lhead">
+          <span>#</span>
+          <span data-sort="title">Track</span>
+          <span class="r" data-sort="bpm">BPM</span>
+          <span class="r" data-sort="key">Key</span>
+          <span class="r" data-sort="energy">Energy</span>
+          <span data-sort="genre">Genre</span>
+        </div>
+
+        <div class="lib-viewport" id="lib-list"><div class="loading">loading library</div></div>
+      </div>
+
+      <!-- RIGHT: galaxy + energy + slots + suggestions + analyze -->
+      <div class="right">
+        <div class="sec galaxy">
+          <div class="sh"><span class="t">Galaxy</span><span class="fig" id="gal-fig">FIG.01 — UMAP</span></div>
+          <canvas id="galaxy-canvas"></canvas>
+          <div class="galaxy-empty" id="galaxy-empty" style="display:none">Library not analyzed — run the analysis batch.</div>
+          <div class="gleg">
+            <span><i style="background:#8c8c84"></i>cloud</span>
+            <span><i style="background:#ff3b1f"></i>set path</span>
+            <span><i style="background:hsl(220 58% 52%)"></i>key node</span>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sh"><span class="t">Energy</span><span class="fig">FIG.02 — TARGET · ACTUAL</span></div>
+          <div class="curve"><svg id="curve-svg" viewBox="0 0 360 96" preserveAspectRatio="none"></svg></div>
+          <div class="alert" id="curve-alert"></div>
+        </div>
+
+        <div class="sec">
+          <div class="sh"><span class="t">Slots</span><span class="fig" id="slots-fig">—</span></div>
+          <div class="timeline" id="timeline"></div>
+        </div>
+
+        <div class="sec">
+          <div class="sh"><span class="t">Suggestions</span><span class="fig">SLOT <span id="sel-pos">—</span></span></div>
+          <div class="sel-strip hidden" id="sel-strip">
+            <span class="lbl">Candidate</span>
+            <span class="st-name" id="sel-name"></span>
+            <button class="st-x" id="sel-clear">clear</button>
+          </div>
+          <div class="sugg-wrap" id="sugg-list"></div>
+          <div class="force-row">
+            <button class="btn outline" id="btn-place" disabled>Place in slot</button>
+            <button class="btn" id="btn-force" disabled>Force in slot</button>
+            <button class="btn outline" id="btn-clear-slot" disabled>Clear slot</button>
+          </div>
+          <div class="impact" id="impact"></div>
+        </div>
+
+        <div class="sec">
+          <div class="sh"><span class="t">Analyze</span><span class="fig">BATCH</span></div>
+          <div class="analyze-panel" id="analyze-panel"></div>
         </div>
       </div>
-
-      <div class="lib">
-        <input id="lib-search" class="lib-search" placeholder="Filtrer la librairie (titre, artiste, genre)…" />
-        <div id="lib-list" class="lib-list"></div>
-      </div>
-
-      <div class="export-row">
-        <button id="btn-export" class="primary">Exporter vers Rekordbox</button>
-        <span class="meta" style="color:var(--text-faint)">Rekordbox doit être fermé.</span>
-      </div>
-    </section>
-
-    <section id="zone-curve" class="zone">
-      <h2>Courbe d'énergie</h2>
-      <svg id="curve-svg" viewBox="0 0 600 160" preserveAspectRatio="none"></svg>
-      <div id="curve-alert" class="alert"></div>
-    </section>
-
-    <section id="zone-timeline" class="zone">
-      <h2>Timeline</h2>
-      <div id="timeline" class="timeline"></div>
-    </section>
-
-    <section id="zone-suggest" class="zone">
-      <h2>Suggestions — slot <span id="sel-pos">—</span></h2>
-      <div id="sugg-list"></div>
-      <div class="force-row">
-        <input id="force-cid" placeholder="content_id à forcer hors suggestions" />
-        <button id="btn-force">Forcer</button>
-      </div>
-      <div id="impact" class="impact"></div>
-    </section>
-
-    <section id="zone-analyze" class="zone">
-      <h2>Analyse</h2>
-      <div id="analyze-panel" class="analyze-panel"></div>
-    </section>
-
-    <section id="zone-galaxy" class="zone">
-      <h2>Galaxy</h2>
-      <canvas id="galaxy-canvas" width="360" height="340"></canvas>
-      <div id="galaxy-empty" class="galaxy-empty" style="display:none">Librairie non analysée — lance le batch d'analyse.</div>
-    </section>
-
+    </div>
   </div>
 
+  <div class="hovercard" id="hovercard"></div>
   <div id="toast" class="toast"></div>
 
-  <script src="/static/curve.js"></script>
-  <script src="/static/timeline.js"></script>
-  <script src="/static/suggestions.js"></script>
-  <script src="/static/galaxy.js"></script>
-  <script src="/static/analyze.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="/static/camelot.js?v=8"></script>
+  <script src="/static/curve.js?v=8"></script>
+  <script src="/static/timeline.js?v=8"></script>
+  <script src="/static/suggestions.js?v=8"></script>
+  <script src="/static/galaxy.js?v=8"></script>
+  <script src="/static/analyze.js?v=8"></script>
+  <script src="/static/library.js?v=8"></script>
+  <script src="/static/app.js?v=8"></script>
 </body>
 </html>
