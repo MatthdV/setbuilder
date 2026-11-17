@@ -26,6 +26,14 @@ CREATE TABLE IF NOT EXISTS features (
     analysis_version TEXT,
     analyzed_at     TEXT
 );
+CREATE TABLE IF NOT EXISTS analyze_failures (
+    content_id       TEXT,
+    analysis_version TEXT,
+    error            TEXT,
+    failed_at        TEXT,
+    file_path        TEXT,
+    PRIMARY KEY (content_id, analysis_version)
+);
 CREATE TABLE IF NOT EXISTS galaxy (
     content_id   TEXT PRIMARY KEY,
     umap_x       REAL,
@@ -41,9 +49,16 @@ _COLUMNS = {
 }
 
 
+def _migrate(cache):
+    cols = {r[1] for r in cache.execute("PRAGMA table_info(analyze_failures)")}
+    if cols and "file_path" not in cols:
+        cache.execute("ALTER TABLE analyze_failures ADD COLUMN file_path TEXT")
+
+
 def open_features(cache: sqlite3.Connection) -> None:
     """Crée les tables features et galaxy si absentes."""
     cache.executescript(_SCHEMA)
+    _migrate(cache)
     cache.commit()
 
 
@@ -91,3 +106,22 @@ def resolve_analysis_version(cache: sqlite3.Connection, stored: str) -> str:
     row = cache.execute("SELECT analysis_version FROM features WHERE analysis_version IS NOT NULL "
                         "GROUP BY analysis_version ORDER BY COUNT(*) DESC LIMIT 1").fetchone()
     return row[0] if row else stored
+
+
+def record_failure(cache: sqlite3.Connection, content_id: str, analysis_version: str, error: str,
+                   file_path: str | None = None) -> None:
+    """Mémorise un échec d'analyse (pas les fichiers introuvables : une clé USB peut revenir)."""
+    cache.execute(
+        "INSERT OR REPLACE INTO analyze_failures (content_id, analysis_version, error, failed_at, file_path) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (content_id, analysis_version, error[:200],
+         datetime.now(timezone.utc).isoformat(timespec="seconds"), file_path),
+    )
+    cache.commit()
+
+
+def reset_failures(cache: sqlite3.Connection) -> int:
+    """Retry délibéré : oublie tous les échecs mémorisés. Retourne le nombre effacé."""
+    n = cache.execute("DELETE FROM analyze_failures").rowcount
+    cache.commit()
+    return n

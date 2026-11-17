@@ -95,7 +95,7 @@ def test_list_sets_skips_corrupt_row(tmp_path):
     client = TestClient(create_app(path), raise_server_exceptions=False)
     ok = _mk(client).json()["set_id"]
     c = sqlite3.connect(path)
-    c.execute("INSERT INTO sets VALUES ('bad','b','count',3,?, 'av1','2026-01-01')",
+    c.execute("INSERT INTO sets (set_id,name,mode,target,curve_json,analysis_version,created_at) VALUES ('bad','b','count',3,?, 'av1','2026-01-01')",
               ('[[0, NaN]]',))
     c.execute("INSERT INTO set_slots (set_id, position) VALUES ('bad', 0)")
     c.commit()
@@ -141,7 +141,7 @@ def test_empty_db_endpoints_do_not_500(tmp_path):
     client = TestClient(create_app(str(tmp_path / "new.db")), raise_server_exceptions=False)
     assert client.get("/library").json() == []
     assert client.get("/galaxy").json() == []
-    assert client.get("/analyze/pending").json() == {"pending": 0, "total": 0}
+    assert client.get("/analyze/pending").json() == {"pending": 0, "total": 0, "failed": 0}
 
 
 # --- sécurité locale : pas de CORS, pas de requête cross-origin -------------------

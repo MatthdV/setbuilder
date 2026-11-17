@@ -48,10 +48,12 @@ function renderAnalyze(el, pend, status, onStart) {
       `Analysis done: ${status.analyzed || 0} analyzed, ${status.failed || 0} failed.`));
   }
 
+  const failed = (pend && pend.failed) || 0;
   const btn = _el("button", "btn", pending > 0
     ? `Analyze ${pending} new tracks`
     : (total ? "Library up to date" : "No analyzable tracks"));
   btn.disabled = pending === 0;
   btn.addEventListener("click", onStart);
   el.append(btn);
+  if (failed > 0) el.append(_el("div", "an-meta", `${failed} track(s) failed analysis and are skipped.`));
 }

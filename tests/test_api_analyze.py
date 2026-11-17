@@ -39,7 +39,7 @@ def _live_launcher(calls):
 def test_pending_counts_analyzable_tracks_only(tmp_path):
     client, _ = _client(tmp_path, paths=["/a/one.wav", None, ""])
     body = client.get("/analyze/pending").json()
-    assert body == {"pending": 1, "total": 1}
+    assert body == {"pending": 1, "total": 1, "failed": 0}
 
 
 def test_status_endpoint_returns_idle_when_no_file(tmp_path):
