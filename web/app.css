@@ -253,3 +253,8 @@ input, select { font: inherit; }
 .slots-export { display: block; width: 100%; border: 0; border-top: 2px solid var(--ink); background: var(--ink); color: #0a0a09; font-family: var(--disp); font-weight: 900; text-transform: uppercase; padding: 9px; letter-spacing: .04em; }
 .slots-export:hover:not(:disabled) { background: var(--haz); }
 .slots-export:disabled { background: var(--box); color: var(--faint); cursor: default; }
+
+.sh .st-x { margin-left: auto; margin-right: 10px; border: 1px solid var(--box); background: transparent; color: var(--dim); padding: 1px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.sh .st-x:hover { color: var(--haz); border-color: var(--haz); }
+.gleg [hidden] { display: none; }
+.gleg i { width: 14px; }

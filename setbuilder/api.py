@@ -40,7 +40,8 @@ from setbuilder.analyze_launch import spawn_analyze
 from setbuilder.cache import apply_pragmas, ensure_schema
 from setbuilder.export import backup_db, export_set
 from setbuilder.files import resolve_file
-from setbuilder.features_cache import open_features, reset_failures, resolve_analysis_version
+from setbuilder.features_cache import (REL_ENERGY_CTE, REL_ENERGY_JOIN, REL_ENERGY_SQL,
+                                        open_features, reset_failures, resolve_analysis_version)
 from setbuilder.curve import PRESETS
 from setbuilder.impact import ImpactReport, forced_impact
 from setbuilder.scoring import Candidate, ScoreBreakdown
@@ -257,13 +258,15 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     @app.get("/library")
     def library():
         rows = conn.execute(
+            REL_ENERGY_CTE +
             "SELECT t.content_id, t.title, t.artist, t.bpm, t.camelot, t.genre, t.duration_s, "
-            "f.energy_score, f.top_genre "
+            f"f.energy_score, {REL_ENERGY_SQL}, f.top_genre "
             "FROM tracks t LEFT JOIN features f ON f.content_id = t.content_id "
+            + REL_ENERGY_JOIN +
             "ORDER BY t.artist, t.title"
         ).fetchall()
         cols = ["content_id", "title", "artist", "bpm", "camelot", "genre", "duration_s",
-                "energy_score", "top_genre"]
+                "energy_score", "energy", "top_genre"]
         return [dict(zip(cols, r)) for r in rows]
 
     @app.get("/galaxy")

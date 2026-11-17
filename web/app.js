@@ -23,7 +23,7 @@ function apiMessage(e, map, fallback) {
 const state = {
   set: null, library: [], galaxy: [], byId: {},
   selPos: null, candidateId: null, analyzePoll: null, libView: null,
-  suggReq: 0,
+  suggReq: 0, galColor: "key",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -40,7 +40,7 @@ function toast(msg, isErr) {
 const metaOf = (cid) => state.byId[cid] || null;
 const titleOf = (cid) => { const m = metaOf(cid); return m ? ((m.artist ? m.artist + " — " : "") + (m.title || cid)) : cid; };
 const keyOf = (cid) => { const m = metaOf(cid); return m ? m.camelot : null; };
-const energyOf = (cid) => { const m = metaOf(cid); return m && m.energy_score != null ? m.energy_score : null; };
+const energyOf = (cid) => { const m = metaOf(cid); const e = m && (m.energy != null ? m.energy : m.energy_score); return e != null ? e : null; };
 const durOf = (cid) => { const m = metaOf(cid); return m && m.duration_s != null ? m.duration_s : null; };
 
 function fmtLen(sec) {
@@ -76,10 +76,24 @@ async function openSet(setId) {
 }
 
 // ---- galaxy ----
+const GAL_K = 12;
+// Nearest neighbours of `cid` on the 2D map (UMAP distance ~ sonic similarity).
+function galaxyNeighbors(cid, k) {
+  const me = state.galaxy.find((p) => p.content_id === cid);
+  if (!me) return [];
+  return state.galaxy.filter((p) => p !== me)
+    .map((p) => [(p.umap_x - me.umap_x) ** 2 + (p.umap_y - me.umap_y) ** 2, p.content_id])
+    .sort((a, b) => a[0] - b[0]).slice(0, k).map((x) => x[1]);
+}
+
 function renderGalaxy() {
   const setPath = state.set ? state.set.slots.filter((x) => x.content_id).map((x) => x.content_id) : [];
   const forced = state.set ? state.set.slots.filter((x) => x.is_forced).map((x) => x.content_id) : [];
+  const sel = state.candidateId;
   drawGalaxy($("galaxy-canvas"), state.galaxy, state.byId, setPath, forced, {
+    colorMode: state.galColor, energyOf,
+    selectedId: sel, neighbors: sel ? new Set(galaxyNeighbors(sel, GAL_K)) : null,
+  }, {
     onHover: onGalaxyHover,
     onSelect: (cid) => setCandidate(cid),
   });
@@ -157,6 +171,7 @@ function updateButtons() {
 // ---- candidate selection (library row / galaxy click) ----
 function setCandidate(cid) {
   state.candidateId = cid;
+  renderGalaxy();
   if (state.libView) state.libView.setSelected(cid);
   const strip = $("sel-strip");
   if (cid) {
@@ -396,6 +411,13 @@ function wire() {
   });
   const syncMode = () => { $("f-target-wrap").hidden = $("f-mode").value !== "duration"; };
   $("f-mode").addEventListener("change", syncMode); syncMode();
+  $("gal-color").addEventListener("click", () => {
+    state.galColor = state.galColor === "key" ? "energy" : "key";
+    $("gal-color").textContent = "Color: " + state.galColor;
+    $("gal-leg-key").hidden = state.galColor !== "key";
+    $("gal-leg-en").hidden = state.galColor !== "energy";
+    renderGalaxy();
+  });
   $("btn-create").addEventListener("click", createSet);
   $("btn-delete").addEventListener("click", deleteSet);
   $("f-existing").addEventListener("change", (ev) => { if (ev.target.value) openSet(ev.target.value); });
