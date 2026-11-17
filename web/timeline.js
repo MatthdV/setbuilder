@@ -1,7 +1,7 @@
 // Slots ledger: coordinate SLOT_NN, track title (not a content_id slice),
 // Camelot chip, anchor/forced markers, empty = hatched. Click -> onSelect(pos).
 // DOM-built, no innerHTML with server/user strings.
-function drawTimeline(el, slots, selectedPos, onSelect, titleOf, keyOf) {
+function drawTimeline(el, slots, selectedPos, onSelect, titleOf, keyOf, onDropTrack) {
   el.textContent = "";
   slots.forEach((s) => {
     const d = document.createElement("div");
@@ -24,6 +24,17 @@ function drawTimeline(el, slots, selectedPos, onSelect, titleOf, keyOf) {
     if (filled) d.append(keyChip(keyOf(s.content_id)));
 
     d.addEventListener("click", () => onSelect(s.position));
+    if (onDropTrack) {
+      const ok = (ev) => ev.dataTransfer && [...ev.dataTransfer.types].includes("text/x-setbuilder-track");
+      d.addEventListener("dragover", (ev) => { if (ok(ev)) { ev.preventDefault(); ev.dataTransfer.dropEffect = "copy"; d.classList.add("drop"); } });
+      d.addEventListener("dragleave", () => d.classList.remove("drop"));
+      d.addEventListener("drop", (ev) => {
+        d.classList.remove("drop");
+        if (!ok(ev)) return;
+        ev.preventDefault();
+        onDropTrack(s.position, ev.dataTransfer.getData("text/x-setbuilder-track"));
+      });
+    }
     el.append(d);
   });
 }
