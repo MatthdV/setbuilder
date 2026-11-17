@@ -35,7 +35,7 @@ from setbuilder.analyze_job import (
 from setbuilder.analyze_launch import spawn_analyze
 from setbuilder.cache import apply_pragmas, ensure_schema
 from setbuilder.export import backup_db, export_set
-from setbuilder.features_cache import open_features, resolve_analysis_version
+from setbuilder.features_cache import open_features, reset_failures, resolve_analysis_version
 from setbuilder.curve import PRESETS
 from setbuilder.impact import ImpactReport, forced_impact
 from setbuilder.scoring import Candidate, ScoreBreakdown
@@ -103,8 +103,8 @@ class SetCreate(BaseModel):
 class SlotUpdate(BaseModel):
     content_id: str
     overwrite: bool = False
-    is_anchor: bool = False
-    is_forced: bool = False
+    is_anchor: bool | None = None  # None : conserve l'ancre existante si on écrase un slot protégé
+    is_forced: bool | None = None
 
 
 def _durations(conn: sqlite3.Connection, rec: SetRecord) -> list[float | None]:
@@ -186,6 +186,7 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     rekordbox_probe = rekordbox_probe or _default_rekordbox_probe
     status_path = status_path_for(db_path)
     analyze_lock = threading.Lock()
+    placement_lock = threading.Lock()
     app = FastAPI(title="setbuilder")
     # Pas de CORS : le front est servi en même origine. Garde locale : l'Host doit être
     # loopback (anti DNS-rebinding) et un Origin éventuel doit l'être aussi (anti CSRF,
@@ -297,9 +298,14 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
             raise HTTPException(status_code=404, detail="slot hors bornes")
         if conn.execute("SELECT 1 FROM tracks WHERE content_id = ?", (body.content_id,)).fetchone() is None:
             raise HTTPException(status_code=404, detail="morceau introuvable dans la lib")
-        _check_placement(rec, pos, body.content_id, body.overwrite)
-        place_track(conn, set_id, pos, body.content_id,
-                    is_anchor=body.is_anchor, is_forced=body.is_forced)
+        with placement_lock:  # check + écriture atomiques (pas de doublon par requêtes concurrentes)
+            rec = _require_set(conn, set_id)
+            _check_placement(rec, pos, body.content_id, body.overwrite)
+            cur = rec.slots[pos]
+            keep = body.overwrite and cur.content_id is not None
+            anchor = body.is_anchor if body.is_anchor is not None else (cur.is_anchor if keep else False)
+            forced = body.is_forced if body.is_forced is not None else (cur.is_forced if keep else False)
+            place_track(conn, set_id, pos, body.content_id, is_anchor=anchor, is_forced=forced)
         return _serialize_set(conn, _require_set(conn, set_id))["slots"][pos]
 
     @app.delete("/sets/{set_id}/slots/{pos}")
@@ -331,7 +337,11 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
         ctx = build_slot_context(rec, pos, by_id, durations)
         next_ = _next_filled(rec, pos, by_id)
         report = forced_impact(forced, ctx.prev, next_, ctx.target_energy)
-        place_track(conn, set_id, pos, body.content_id, is_forced=True)
+        with placement_lock:
+            rec = _require_set(conn, set_id)
+            _check_placement(rec, pos, body.content_id, body.overwrite)
+            keep_anchor = body.overwrite and rec.slots[pos].is_anchor
+            place_track(conn, set_id, pos, body.content_id, is_anchor=keep_anchor, is_forced=True)
         slot = _serialize_set(conn, _require_set(conn, set_id))["slots"][pos]
         return {"slot": slot, "impact": _serialize_impact(report)}
 
@@ -396,6 +406,11 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     @app.get("/analyze/status")
     def analyze_status():
         return read_status(status_path)  # jamais 500 ; idle/running/stale/done/error
+
+    @app.post("/analyze/failures/reset")
+    def analyze_reset_failures():
+        """Retry délibéré des morceaux dont l'analyse a échoué."""
+        return {"reset": reset_failures(conn)}
 
     @app.post("/analyze")
     def analyze_start():

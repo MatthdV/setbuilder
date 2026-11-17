@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS analyze_failures (
     analysis_version TEXT,
     error            TEXT,
     failed_at        TEXT,
+    file_path        TEXT,
     PRIMARY KEY (content_id, analysis_version)
 );
 CREATE TABLE IF NOT EXISTS galaxy (
@@ -48,9 +49,16 @@ _COLUMNS = {
 }
 
 
+def _migrate(cache):
+    cols = {r[1] for r in cache.execute("PRAGMA table_info(analyze_failures)")}
+    if cols and "file_path" not in cols:
+        cache.execute("ALTER TABLE analyze_failures ADD COLUMN file_path TEXT")
+
+
 def open_features(cache: sqlite3.Connection) -> None:
     """Crée les tables features et galaxy si absentes."""
     cache.executescript(_SCHEMA)
+    _migrate(cache)
     cache.commit()
 
 
@@ -100,10 +108,20 @@ def resolve_analysis_version(cache: sqlite3.Connection, stored: str) -> str:
     return row[0] if row else stored
 
 
-def record_failure(cache: sqlite3.Connection, content_id: str, analysis_version: str, error: str) -> None:
+def record_failure(cache: sqlite3.Connection, content_id: str, analysis_version: str, error: str,
+                   file_path: str | None = None) -> None:
     """Mémorise un échec d'analyse (pas les fichiers introuvables : une clé USB peut revenir)."""
     cache.execute(
-        "INSERT OR REPLACE INTO analyze_failures VALUES (?, ?, ?, ?)",
-        (content_id, analysis_version, error[:200], datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        "INSERT OR REPLACE INTO analyze_failures (content_id, analysis_version, error, failed_at, file_path) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (content_id, analysis_version, error[:200],
+         datetime.now(timezone.utc).isoformat(timespec="seconds"), file_path),
     )
     cache.commit()
+
+
+def reset_failures(cache: sqlite3.Connection) -> int:
+    """Retry délibéré : oublie tous les échecs mémorisés. Retourne le nombre effacé."""
+    n = cache.execute("DELETE FROM analyze_failures").rowcount
+    cache.commit()
+    return n

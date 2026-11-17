@@ -154,3 +154,28 @@ def test_export_suffixes_existing_name():
     assert export_set(rb, "Club", ["a"])["playlist"] == "Club (3)"
     assert rb.created == "Club (3)"
     assert export_set(_RB([]), "Club", ["a"])["playlist"] == "Club"
+
+
+def test_overwrite_keeps_anchor_and_failure_reset(tmp_path):
+    client = _client(tmp_path)
+    sid = _set(client)
+    client.put(f"/sets/{sid}/slots/0", json={"content_id": "a", "is_anchor": True})
+    r = client.put(f"/sets/{sid}/slots/0", json={"content_id": "b", "overwrite": True})
+    assert r.json()["is_anchor"] is True
+
+
+def test_failure_retried_when_file_changes_or_reset(tmp_path):
+    conn = open_cache(str(tmp_path / "s.db"))
+    open_features(conn)
+    conn.execute("INSERT INTO tracks (content_id, file_path) VALUES ('2', 'bd.mp3')")
+    conn.commit()
+    run_analyze(conn, analyzers=_Fakes())
+    assert count_pending(conn)[0] == 0
+    conn.execute("UPDATE tracks SET file_path = 'bd2.mp3' WHERE content_id = '2'")  # fichier changé
+    conn.commit()
+    assert count_pending(conn)[0] == 1
+    conn.execute("UPDATE tracks SET file_path = 'bd.mp3' WHERE content_id = '2'")
+    conn.commit()
+    from setbuilder.features_cache import reset_failures
+    assert reset_failures(conn) == 1
+    assert count_pending(conn)[0] == 1

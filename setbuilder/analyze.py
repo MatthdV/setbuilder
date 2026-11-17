@@ -59,7 +59,8 @@ def count_pending(
         "AND NOT EXISTS (SELECT 1 FROM features f "
         "WHERE f.content_id = t.content_id AND f.analysis_version = ?) "
         "AND NOT EXISTS (SELECT 1 FROM analyze_failures x "
-        "WHERE x.content_id = t.content_id AND x.analysis_version = ?)",
+        "WHERE x.content_id = t.content_id AND x.analysis_version = ? "
+        "AND x.file_path IS t.file_path)",
         (analysis_version, analysis_version),
     ).fetchone()[0]
     return pending, total
@@ -69,7 +70,7 @@ def count_failed(cache: sqlite3.Connection, analysis_version: str = ANALYSIS_VER
     open_features(cache)
     return cache.execute(
         "SELECT COUNT(*) FROM analyze_failures x JOIN tracks t ON t.content_id = x.content_id "
-        "WHERE x.analysis_version = ?", (analysis_version,)).fetchone()[0]
+        "WHERE x.analysis_version = ? AND x.file_path IS t.file_path", (analysis_version,)).fetchone()[0]
 
 
 def run_analyze(
@@ -91,7 +92,8 @@ def run_analyze(
     rows = cache.execute(
         f"SELECT content_id, file_path FROM tracks t WHERE {_ANALYZABLE_WHERE} "
         "AND NOT EXISTS (SELECT 1 FROM analyze_failures x "
-        "WHERE x.content_id = t.content_id AND x.analysis_version = ?) ORDER BY content_id",
+        "WHERE x.content_id = t.content_id AND x.analysis_version = ? "
+        "AND x.file_path IS t.file_path) ORDER BY content_id",
         (analysis_version,),
     ).fetchall()
     stats = AnalyzeStats()
@@ -120,7 +122,7 @@ def run_analyze(
                 except Exception as e:  # noqa: BLE001 - un track KO ne doit pas tuer le batch
                     stats.failed += 1
                     stats.failures.append((content_id, str(e)[:200]))
-                    record_failure(cache, content_id, analysis_version, str(e))
+                    record_failure(cache, content_id, analysis_version, str(e), file_path)
         if progress:
             progress(i, len(rows), stats)
 
