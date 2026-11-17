@@ -233,3 +233,7 @@ input, select { font: inherit; }
 .lib-viewport::-webkit-scrollbar-thumb:hover { background: var(--haz); }
 .search .st-x[hidden], .cmd .f[hidden] { display: none; }
 .search .st-x { border: 1px solid var(--box); background: transparent; color: var(--dim); padding: 2px 8px; font-size: 10px; } .search .st-x:hover { color: var(--haz); border-color: var(--haz); }
+
+/* drag & drop target */
+.st.drop { outline: 2px dashed var(--haz); outline-offset: -2px; background: #1a0d0a; }
+.lrow[draggable="true"] { -webkit-user-drag: element; }

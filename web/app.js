@@ -128,7 +128,8 @@ function render() {
 
   if (s) {
     drawCurve($("curve-svg"), s.curve_points, s.slots, energyOf, slotPosFn(s));
-    drawTimeline($("timeline"), s.slots, state.selPos, selectSlot, titleOf, keyOf);
+    drawTimeline($("timeline"), s.slots, state.selPos, selectSlot, titleOf, keyOf,
+      (pos, cid) => placeTrack(pos, cid));
   } else {
     $("curve-svg").innerHTML = "";
     $("curve-alert").classList.remove("show");
@@ -211,12 +212,35 @@ async function placeTrack(pos, cid, isAnchor, overwrite) {
     await openSet(state.set.set_id);
     state.selPos = pos; render(); renderSuggestionsPanel();
     toast("Track placed.");
+    return true;
   } catch (e) {
     if (e.status === 409 && e.detail === "slot_protected" && !overwrite
         && confirm("This slot is anchored/forced. Overwrite it?")) return placeTrack(pos, cid, isAnchor, true);
     toast(e.status === 409 && CONFLICT[e.detail] || apiMessage(e, { 404: "Slot or track not found." }, "Could not place track."), true);
   }
 }
+// First empty slot at/after `from` (wrapping); -1 if the set is full.
+function nextEmptySlot(from) {
+  const sl = state.set ? state.set.slots : [];
+  for (let k = 0; k < sl.length; k++) {
+    const i = (from + k) % sl.length;
+    if (!sl[i].content_id) return i;
+  }
+  return -1;
+}
+
+// Double-click on a library row: drop the track in the next empty slot, then
+// select the following empty slot so the next double-click chains.
+async function quickPlace(t) {
+  if (!state.set) { toast("Create or load a set first.", true); return; }
+  const pos = nextEmptySlot(state.selPos != null ? state.selPos : 0);
+  if (pos < 0) { toast("No empty slot left.", true); return; }
+  if (await placeTrack(pos, t.content_id)) {
+    const nxt = nextEmptySlot(pos + 1);
+    if (nxt >= 0) await selectSlot(nxt);
+  }
+}
+
 async function forceTrack(pos, cid, overwrite) {
   try {
     const res = await post(`/sets/${state.set.set_id}/slots/${pos}/force`, { content_id: cid, overwrite: !!overwrite });
@@ -339,6 +363,7 @@ async function deleteSet() {
 function wire() {
   state.libView = createLibraryView($("lib-list"), {
     onSelect: (t) => setCandidate(t.content_id),
+    onActivate: quickPlace,
     onCount: (shown, total) => {
       $("lib-count").textContent = shown === total ? `${total} tracks` : `${shown} / ${total}`;
     },

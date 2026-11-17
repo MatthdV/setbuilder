@@ -4,11 +4,12 @@
 //
 // createLibraryView(container, { onSelect, onCount }) -> controller.
 //   container: the scroll viewport element.
-//   onSelect(track): row clicked.
+//   onSelect(track): row clicked. onActivate(track): row double-clicked. Rows are draggable.
 //   onCount(shown, total): filtered count changed.
 function createLibraryView(container, opts) {
   opts = opts || {};
   const onSelect = opts.onSelect || function () {};
+  const onActivate = opts.onActivate || function () {};
   const onCount = opts.onCount || function () {};
   const ROW_H = 38, OVERSCAN = 8;
 
@@ -112,6 +113,14 @@ function createLibraryView(container, opts) {
     gn.textContent = t.genre || t.top_genre || "";
     r.append(idx, nm, bpm, key, en, gn);
     r.addEventListener("click", () => { setSelected(t.content_id); onSelect(t); });
+    r.addEventListener("dblclick", () => { setSelected(t.content_id); onSelect(t); onActivate(t); });
+    r.draggable = true;
+    r.addEventListener("dragstart", (ev) => {
+      // no re-render here: replacing the dragged row would cancel the drag
+      ev.dataTransfer.setData("text/x-setbuilder-track", t.content_id);
+      ev.dataTransfer.setData("text/plain", t.content_id);
+      ev.dataTransfer.effectAllowed = "copy";
+    });
     return r;
   }
 
