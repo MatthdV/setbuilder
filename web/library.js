@@ -93,7 +93,13 @@ function createLibraryView(container, opts) {
     const r = document.createElement("div");
     r.className = "lrow" + (t.content_id === selectedId ? " sel" : "");
     const idx = document.createElement("span");
-    idx.className = "idx"; idx.textContent = String(i + 1).padStart(2, "0");
+    idx.className = "idx";
+    const pb = document.createElement("button");
+    pb.className = "pv" + (typeof isPlaying === "function" && isPlaying(t.content_id) ? " on" : "");
+    pb.textContent = (typeof isPlaying === "function" && isPlaying(t.content_id)) ? "❚❚" : "▶";
+    pb.title = "Preview";
+    pb.addEventListener("click", (ev) => { ev.stopPropagation(); previewToggle(t.content_id); });
+    idx.append(pb);
     const nm = document.createElement("span"); nm.className = "nm";
     const b = document.createElement("b"); b.textContent = t.title || t.content_id;
     const s = document.createElement("s"); s.textContent = t.artist || "";

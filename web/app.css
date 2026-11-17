@@ -39,7 +39,7 @@ input, select { font: inherit; }
 
 /* ---- body split ---- */
 .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 430px; }
-.left { border-right: 2px solid var(--ink); min-width: 0; display: grid; grid-template-rows: auto auto auto 1fr; min-height: 0; }
+.left { border-right: 2px solid var(--ink); min-width: 0; display: grid; grid-template-rows: auto auto auto auto minmax(0, 1fr); min-height: 0; }
 
 /* command row */
 .cmd { display: flex; border-bottom: 2px solid var(--ink); flex-wrap: wrap; }
@@ -192,7 +192,7 @@ input, select { font: inherit; }
   .mast .readout { border-top: 2px solid var(--ink); }
   .readout { flex-wrap: wrap; }
   .body { grid-template-columns: 1fr; }
-  .left { border-right: 0; border-bottom: 2px solid var(--ink); grid-template-rows: auto auto auto auto; }
+  .left { border-right: 0; border-bottom: 2px solid var(--ink); grid-template-rows: auto auto auto auto auto; }
   .lib-viewport { height: 360px; }
   .right { overflow: visible; }
 }
@@ -208,6 +208,23 @@ input, select { font: inherit; }
   .en { gap: 4px; }
 }
 
+/* Chrome scroll anchoring fights a virtualized list (rows are swapped under the
+   viewport -> it "corrects" scrollTop -> list runs away). Disable it. */
+.lib-viewport, .lib-inner, .lib-viewport * { overflow-anchor: none; }
+
+/* audio preview */
+.lrow .idx { padding: 0; justify-content: center; }
+.lrow .pv { width: 100%; height: 100%; border: 0; background: transparent; color: var(--faint); font-size: 12px; }
+.lrow .pv:hover, .lrow .pv.on { color: var(--haz); }
+.lrow.sel .pv { color: #2a0a05; }
+.player { display: flex; align-items: center; gap: 10px; padding: 6px 13px; border-bottom: 2px solid var(--ink); background: var(--box); }
+.player[hidden] { display: flex; height: 0; padding: 0; border: 0; overflow: hidden; visibility: hidden; }
+.player button { border: 1px solid var(--dim); background: transparent; color: var(--ink); width: 28px; height: 24px; font-size: 11px; }
+.player button:hover { border-color: var(--haz); color: var(--haz); }
+.pl-title { flex: 0 1 38%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 700; }
+.player input[type=range] { flex: 1; min-width: 40px; accent-color: var(--haz); }
+.pl-time { color: var(--dim); font-size: 10px; white-space: nowrap; }
+.btn-sm.pv { margin-right: 6px; }
 /* visible scrollbar on the library (overlay scrollbars hide how long the list is) */
 .lib-viewport { scrollbar-width: thin; scrollbar-color: var(--dim) var(--bg); overscroll-behavior: contain; }
 .lib-viewport::-webkit-scrollbar { width: 12px; }

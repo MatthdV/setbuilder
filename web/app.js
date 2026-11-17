@@ -344,6 +344,7 @@ function wire() {
     },
   });
 
+  initPlayer(titleOf, () => { if (state.libView) state.libView.render(); });
   const syncMode = () => { $("f-target-wrap").hidden = $("f-mode").value !== "duration"; };
   $("f-mode").addEventListener("change", syncMode); syncMode();
   $("btn-create").addEventListener("click", createSet);

@@ -77,7 +77,11 @@ function renderSuggestions(listEl, breakdowns, titleOf, keyOf, onPlace) {
     place.className = "btn-sm";
     place.textContent = "Place";
     place.addEventListener("click", () => onPlace(b.content_id));
-    actions.append(place);
+    const pv = document.createElement("button");
+    pv.className = "btn-sm pv";
+    pv.textContent = (typeof isPlaying === "function" && isPlaying(b.content_id)) ? "❚❚ Listen" : "▶ Listen";
+    pv.addEventListener("click", () => previewToggle(b.content_id));
+    actions.append(pv, place);
 
     card.append(head, dims, actions);
     listEl.append(card);
