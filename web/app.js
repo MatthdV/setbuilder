@@ -231,14 +231,19 @@ function nextEmptySlot(from) {
 
 // Double-click on a library row: drop the track in the next empty slot, then
 // select the following empty slot so the next double-click chains.
+let quickBusy = false;  // serialize: a second double-click must not pick the same empty slot
 async function quickPlace(t) {
+  if (quickBusy) return;
   if (!state.set) { toast("Create or load a set first.", true); return; }
   const pos = nextEmptySlot(state.selPos != null ? state.selPos : 0);
   if (pos < 0) { toast("No empty slot left.", true); return; }
-  if (await placeTrack(pos, t.content_id)) {
-    const nxt = nextEmptySlot(pos + 1);
-    if (nxt >= 0) await selectSlot(nxt);
-  }
+  quickBusy = true;
+  try {
+    if (await placeTrack(pos, t.content_id)) {
+      const nxt = nextEmptySlot(pos + 1);
+      if (nxt >= 0) await selectSlot(nxt);
+    }
+  } finally { quickBusy = false; }
 }
 
 async function forceTrack(pos, cid, overwrite) {
