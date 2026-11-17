@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
+import subprocess
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -16,7 +18,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from typing import Annotated, Literal
 
@@ -35,6 +37,7 @@ from setbuilder.analyze_job import (
 from setbuilder.analyze_launch import spawn_analyze
 from setbuilder.cache import apply_pragmas, ensure_schema
 from setbuilder.export import backup_db, export_set
+from setbuilder.files import resolve_file
 from setbuilder.features_cache import open_features, resolve_analysis_version
 from setbuilder.impact import ImpactReport, forced_impact
 from setbuilder.scoring import Candidate, ScoreBreakdown
@@ -231,6 +234,49 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     def galaxy():
         rows = conn.execute("SELECT content_id, umap_x, umap_y FROM galaxy").fetchall()
         return [{"content_id": c, "umap_x": x, "umap_y": y} for c, x, y in rows]
+
+    # --- Écoute (preview) -------------------------------------------------------
+    # Le chemin vient TOUJOURS de la table `tracks` (jamais d'un paramètre client).
+    _NATIVE = {".mp3", ".wav", ".flac", ".m4a"}  # lisibles tels quels par le navigateur
+    PREVIEW_SECONDS = 120
+
+    def _preview_path(content_id: str) -> str:
+        row = conn.execute("SELECT file_path FROM tracks WHERE content_id = ?", (content_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="morceau introuvable")
+        if not row[0]:
+            raise HTTPException(status_code=404, detail="file_missing")
+        resolved, _ = resolve_file(row[0])
+        if resolved is None:
+            raise HTTPException(status_code=404, detail="file_missing")  # clé USB débranchée ?
+        return resolved
+
+    @app.get("/tracks/{content_id}/preview-info")
+    def preview_info(content_id: str):
+        path = _preview_path(content_id)
+        native = Path(path).suffix.lower() in _NATIVE
+        return {"native": native, "seconds": None if native else PREVIEW_SECONDS}
+
+    @app.get("/tracks/{content_id}/preview")
+    def preview(content_id: str, start: float = Query(0, ge=0, le=36000)):
+        path = _preview_path(content_id)
+        if Path(path).suffix.lower() in _NATIVE:
+            return FileResponse(path)  # Range géré par Starlette (seek navigateur)
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg is None:
+            raise HTTPException(status_code=415, detail="ffmpeg_missing")
+        try:
+            out = subprocess.run(
+                [ffmpeg, "-v", "error", "-ss", str(start), "-t", str(PREVIEW_SECONDS),
+                 "-i", str(Path(path).resolve()), "-vn", "-ac", "2", "-ar", "44100",
+                 "-b:a", "160k", "-f", "mp3", "pipe:1"],
+                capture_output=True, timeout=30, check=True,
+            ).stdout
+        except (subprocess.SubprocessError, OSError) as e:
+            raise HTTPException(status_code=415, detail="transcode_failed") from e
+        if not out:
+            raise HTTPException(status_code=415, detail="transcode_failed")
+        return Response(content=out, media_type="audio/mpeg")
 
     @app.post("/sets")
     def post_set(body: SetCreate):

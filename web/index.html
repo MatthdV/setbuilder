@@ -52,6 +52,14 @@
           <span class="lbl" id="lib-count">loading…</span>
         </div>
 
+        <div class="player" id="player" hidden>
+          <button id="pl-btn" title="Play / pause (space)">▶</button>
+          <span class="pl-title" id="pl-title"></span>
+          <input type="range" id="pl-seek" min="0" max="1000" value="0" />
+          <span class="pl-time" id="pl-time">0:00 / 0:00</span>
+          <button id="pl-stop" title="Stop">■</button>
+        </div>
+
         <div class="lhead">
           <span>#</span>
           <span data-sort="title">Track</span>
@@ -115,6 +123,7 @@
   <div class="hovercard" id="hovercard"></div>
   <div id="toast" class="toast"></div>
 
+  <script src="/static/player.js?v=11"></script>
   <script src="/static/camelot.js?v=9"></script>
   <script src="/static/curve.js?v=9"></script>
   <script src="/static/timeline.js?v=9"></script>

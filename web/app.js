@@ -328,6 +328,7 @@ function wire() {
     },
   });
 
+  initPlayer(titleOf, () => { if (state.libView) state.libView.render(); });
   $("btn-create").addEventListener("click", createSet);
   $("btn-delete").addEventListener("click", deleteSet);
   $("f-existing").addEventListener("change", (ev) => { if (ev.target.value) openSet(ev.target.value); });
