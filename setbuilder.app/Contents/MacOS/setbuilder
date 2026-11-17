@@ -1,0 +1,48 @@
+#!/bin/zsh
+# setbuilder.app — the app process IS the local server. Quit from the Dock
+# (Cmd-Q) to stop it. On launch it opens a chromeless app window.
+# Absolute paths: this is a personal launcher, safe to move to /Applications.
+REPO="/Users/matthieudevillele/Documents/rekordbox/setbuilder"
+DB="${REPO}.db"
+PORT=8000
+URL="http://127.0.0.1:${PORT}/"
+
+is_setbuilder() { curl -s "$URL" 2>/dev/null | grep -q "<title>setbuilder</title>"; }
+
+open_app() {
+  if [ -d "/Applications/Google Chrome.app" ]; then
+    open -na "Google Chrome" --args --app="$URL" --new-window
+  elif [ -d "/Applications/Brave Browser.app" ]; then
+    open -na "Brave Browser" --args --app="$URL" --new-window
+  else
+    open "$URL"
+  fi
+}
+
+cd "$REPO" 2>/dev/null || { osascript -e 'display alert "setbuilder" message "Repo not found at '"$REPO"'."'; exit 1; }
+
+# Already running? Just open the window and exit (acts as a launcher).
+if is_setbuilder; then
+  open_app
+  exit 0
+fi
+
+# Fail loudly: launched from Finder there is no terminal, so a missing venv was silent.
+if curl -s -o /dev/null "$URL" 2>/dev/null && ! is_setbuilder; then
+  MSG="Port ${PORT} is used by another service."
+  osascript -e "display alert \"setbuilder\" message \"$MSG\"" 2>/dev/null || echo "$MSG" >&2
+  exit 1
+fi
+
+if [ ! -x "$REPO/.venv/bin/python" ]; then
+  osascript -e 'display alert "setbuilder" message "Python env missing: '"$REPO"'/.venv. Run: uv sync"'
+  exit 1
+fi
+
+# Open the window once the server answers; run the server in front as the app.
+( for i in {1..60}; do is_setbuilder && { open_app; break; }; sleep 0.25; done ) &
+
+# Server died before answering (bad DB, port taken...)? Say so instead of staying silent.
+( sleep 20; is_setbuilder || osascript -e 'display alert "setbuilder" message "Server did not start on port '"$PORT"'."' ) &
+
+SETBUILDER_DB="$DB" SETBUILDER_PORT="$PORT" exec "$REPO/.venv/bin/python" -c 'import os, uvicorn; from setbuilder.api import create_app; uvicorn.run(create_app(os.environ["SETBUILDER_DB"]), host="127.0.0.1", port=int(os.environ["SETBUILDER_PORT"]))'
