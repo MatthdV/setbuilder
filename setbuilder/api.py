@@ -7,6 +7,7 @@ routes délèguent aux couches métier (sets_repo, suggest, impact) et lisent
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import logging
@@ -297,9 +298,11 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
         """mp3 COMPLET du morceau (cache disque) : permet le seek sur toute la durée."""
         src = Path(path).resolve()
         st = src.stat()
-        out = cache_dir / f"{content_id}-{st.st_mtime_ns}-{st.st_size}.mp3"
+        digest = hashlib.sha1(str(src).encode()).hexdigest()[:10]  # chemin dans la clé : pas d'audio périmé
+        out = cache_dir / f"{content_id}-{digest}-{st.st_mtime_ns}-{st.st_size}.mp3"
         if out.is_file():
             out.touch()
+            _prune_cache()
             return out
         ffmpeg = shutil.which("ffmpeg")
         if ffmpeg is None:

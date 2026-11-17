@@ -26,7 +26,7 @@ async function previewToggle(cid) {
     player.loadedCid = cid;
     a.src = `/tracks/${encodeURIComponent(cid)}/preview`;
     // every format is seekable over the WHOLE track (non-native ones are served as a cached full mp3)
-    if (start) a.addEventListener("loadedmetadata", () => { a.currentTime = start; }, { once: true });
+    if (start) a.addEventListener("loadedmetadata", () => { if (token === _loadToken) a.currentTime = start; }, { once: true });
     await a.play();
   } catch (e) {
     if (token !== _loadToken) return;  // stale failure must not clear the newer track
@@ -62,10 +62,10 @@ function initPlayer(titleOf, onChange) {
   for (const ev of ["play", "pause", "ended"]) a.addEventListener(ev, () => { _renderPlayer(true); onChange(); });
   const jump = (dt) => { if (a.duration) a.currentTime = Math.max(0, Math.min(a.duration - 0.5, a.currentTime + dt)); };
   document.addEventListener("keydown", (e) => {
-    if (!player.cid || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+    if (!player.cid || /INPUT|SELECT|TEXTAREA|BUTTON/.test(e.target.tagName)) return;
     if (e.code === "ArrowRight") { e.preventDefault(); jump(e.shiftKey ? 60 : 15); }
     else if (e.code === "ArrowLeft") { e.preventDefault(); jump(e.shiftKey ? -60 : -15); }
-    else if (/^Digit[0-9]$/.test(e.code) && a.duration) { a.currentTime = (Number(e.code.slice(5)) / 10) * a.duration; }
+    else if (/^Digit[0-9]$/.test(e.code) && a.duration) { e.preventDefault(); a.currentTime = (Number(e.code.slice(5)) / 10) * a.duration; }
   });
   document.addEventListener("keydown", (e) => {
     if (e.code === "Space" && player.cid && !/INPUT|SELECT|TEXTAREA|BUTTON/.test(e.target.tagName)) {
