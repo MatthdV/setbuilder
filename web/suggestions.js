@@ -1,13 +1,23 @@
-// Cartes de suggestions : score + detail par dimension (ScoreBreakdown).
-// onPlace(content_id). Elements construits en DOM (pas d'innerHTML utilisateur).
-const _NA = new Set(["key inconnue", "BPM inconnu", "vibe n/a", "ambiance n/a", "énergie n/a"]);
+// Suggestion cards: score + per-dimension breakdown (ScoreBreakdown). onPlace,
+// onForce(content_id). DOM-built, no innerHTML with server/user strings.
+// NOTE: dimension labels come from the backend scoring layer (currently French).
+// We translate the known "unknown/na" variants to English here; any other label
+// is backend DATA shown verbatim. _NA greys out the unknown variants.
+const _DIM_EN = {
+  "key inconnue": "key n/a",
+  "BPM inconnu": "BPM n/a",
+  "vibe n/a": "vibe n/a",
+  "ambiance n/a": "mood n/a",
+  "énergie n/a": "energy n/a",
+};
+const _NA = new Set(Object.keys(_DIM_EN));
 
-function renderSuggestions(listEl, breakdowns, titleOf, onPlace) {
+function renderSuggestions(listEl, breakdowns, titleOf, keyOf, onPlace) {
   listEl.textContent = "";
   if (!breakdowns.length) {
     const p = document.createElement("div");
-    p.className = "galaxy-empty";
-    p.textContent = "Aucune suggestion (librairie vide ou non analysée).";
+    p.className = "empty-note";
+    p.textContent = "No suggestions (library empty or not analyzed).";
     listEl.append(p);
     return;
   }
@@ -17,12 +27,17 @@ function renderSuggestions(listEl, breakdowns, titleOf, onPlace) {
 
     const head = document.createElement("div");
     head.className = "sugg-head";
+    const left = document.createElement("div");
+    left.className = "sugg-id";
+    left.append(keyChip(keyOf(b.content_id)));
     const title = document.createElement("span");
+    title.className = "sugg-title";
     title.textContent = titleOf(b.content_id);
+    left.append(title);
     const score = document.createElement("span");
     score.className = "sugg-score";
     score.textContent = Math.round(b.score);
-    head.append(title, score);
+    head.append(left, score);
 
     const dims = document.createElement("div");
     dims.className = "sugg-dims";
@@ -30,14 +45,15 @@ function renderSuggestions(listEl, breakdowns, titleOf, onPlace) {
       const [label] = pair;
       const chip = document.createElement("span");
       chip.className = "dim" + (_NA.has(label) ? " na" : "");
-      chip.textContent = label;
+      chip.textContent = _DIM_EN[label] || label;
       dims.append(chip);
     });
 
     const actions = document.createElement("div");
     actions.className = "sugg-actions";
     const place = document.createElement("button");
-    place.textContent = "Poser";
+    place.className = "btn-sm";
+    place.textContent = "Place";
     place.addEventListener("click", () => onPlace(b.content_id));
     actions.append(place);
 
@@ -46,13 +62,13 @@ function renderSuggestions(listEl, breakdowns, titleOf, onPlace) {
   });
 }
 
-// Affiche l'ImpactReport d'un morceau force (warnings).
+// ImpactReport of a forced track (warnings). textContent only.
 function renderImpact(el, impact) {
   if (!impact || !impact.warnings || !impact.warnings.length) {
     el.classList.remove("show");
     el.textContent = "";
     return;
   }
-  el.textContent = "Impact du forçage : " + impact.warnings.join(" · ");
+  el.textContent = "Force impact: " + impact.warnings.join(" · ");
   el.classList.add("show");
 }

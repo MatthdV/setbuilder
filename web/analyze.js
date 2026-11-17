@@ -1,6 +1,5 @@
-// Panneau d'analyse (plan 6). Rend l'état du job depuis /analyze/pending +
-// /analyze/status ; aucune logique métier côté client. Pas d'innerHTML pour des
-// données venues du serveur (pattern plan 5).
+// Analysis panel. Renders job state from /analyze/pending + /analyze/status.
+// No business logic client-side. DOM-built, no innerHTML with server strings.
 
 function _el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -9,8 +8,8 @@ function _el(tag, cls, text) {
   return e;
 }
 
-// el : conteneur ; pend : {pending, total} ; status : objet /analyze/status ;
-// onStart : callback clic bouton.
+// el: container ; pend: {pending, total} ; status: /analyze/status object ;
+// onStart: button click callback.
 function renderAnalyze(el, pend, status, onStart) {
   el.textContent = "";
   const state = (status && status.state) || "idle";
@@ -24,33 +23,34 @@ function renderAnalyze(el, pend, status, onStart) {
     const fill = _el("div", "an-bar-fill");
     fill.style.width = (tot ? Math.round((i / tot) * 100) : 0) + "%";
     bar.append(fill);
-    el.append(_el("div", "an-head", `Analyse en cours — ${i}/${tot}`), bar);
-    el.append(_el("div", "meta",
-      `analysés ${status.analyzed || 0} · sautés ${status.skipped || 0} · ` +
-      `introuvables ${status.missing || 0} · échecs ${status.failed || 0}`));
+    el.append(_el("div", "an-head", `Analyzing — ${i}/${tot}`), bar);
+    el.append(_el("div", "an-meta",
+      `analyzed ${status.analyzed || 0} · skipped ${status.skipped || 0} · ` +
+      `missing ${status.missing || 0} · failed ${status.failed || 0}`));
     const fails = status.failures || [];
     if (fails.length) {
       const det = _el("details", "an-fails");
-      det.append(_el("summary", null, `${fails.length} échec(s)`));
-      fails.forEach(([cid, msg]) => det.append(_el("div", "meta", `${cid} : ${msg}`)));
+      det.append(_el("summary", null, `${fails.length} failure(s)`));
+      fails.forEach(([cid, msg]) => det.append(_el("div", "an-meta", `${cid}: ${msg}`)));
       el.append(det);
     }
     return;
   }
 
-  // états non-running : idle | stale | done | error -> bouton + bandeau éventuel
+  // non-running: idle | stale | done | error -> banner (optional) + button
   if (state === "error") {
-    el.append(_el("div", "an-banner err", status.message || "Erreur d'analyse."));
+    // Server message may be non-English; show a generic English banner.
+    el.append(_el("div", "an-banner err", "Analysis error — check the batch and retry."));
   } else if (state === "stale") {
-    el.append(_el("div", "an-banner warn", "Job précédent interrompu — relance possible."));
+    el.append(_el("div", "an-banner warn", "Previous job interrupted — safe to relaunch."));
   } else if (state === "done") {
     el.append(_el("div", "an-banner ok",
-      `Analyse terminée : ${status.analyzed || 0} analysés, ${status.failed || 0} échecs.`));
+      `Analysis done: ${status.analyzed || 0} analyzed, ${status.failed || 0} failed.`));
   }
 
-  const btn = _el("button", "primary", pending > 0
-    ? `Analyser ${pending} nouveaux morceaux`
-    : (total ? "Librairie à jour" : "Aucun morceau analysable"));
+  const btn = _el("button", "btn", pending > 0
+    ? `Analyze ${pending} new tracks`
+    : (total ? "Library up to date" : "No analyzable tracks"));
   btn.disabled = pending === 0;
   btn.addEventListener("click", onStart);
   el.append(btn);

@@ -1,23 +1,28 @@
-// Timeline des slots : ancres (accent), vide selectionne, force en rouge.
-// Clic -> onSelect(position). Pas d'innerHTML avec des chaines utilisateur.
-function drawTimeline(el, slots, selectedPos, onSelect) {
+// Slots ledger: coordinate SLOT_NN, track title (not a content_id slice),
+// Camelot chip, anchor/forced markers, empty = hatched. Click -> onSelect(pos).
+// DOM-built, no innerHTML with server/user strings.
+function drawTimeline(el, slots, selectedPos, onSelect, titleOf, keyOf) {
   el.textContent = "";
   slots.forEach((s) => {
     const d = document.createElement("div");
-    d.className = "slot";
-    if (s.content_id) d.classList.add("filled");
+    d.className = "st";
+    const filled = !!s.content_id;
+    if (!filled) d.classList.add("empty");
     if (s.is_anchor) d.classList.add("anchor");
     if (s.is_forced) d.classList.add("forced");
     if (s.position === selectedPos) d.classList.add("selected");
 
-    const pos = document.createElement("span");
-    pos.className = "pos";
-    pos.textContent = s.position + 1;
-    const cid = document.createElement("span");
-    cid.className = "cid";
-    cid.textContent = s.content_id ? s.content_id.slice(0, 6) : "—";
+    const co = document.createElement("div");
+    co.className = "co";
+    co.textContent = "SLOT_" + String(s.position + 1).padStart(2, "0");
 
-    d.append(pos, cid);
+    const nm = document.createElement("div");
+    nm.className = "snm";
+    nm.textContent = filled ? titleOf(s.content_id) : "— empty —";
+
+    d.append(co, nm);
+    if (filled) d.append(keyChip(keyOf(s.content_id)));
+
     d.addEventListener("click", () => onSelect(s.position));
     el.append(d);
   });

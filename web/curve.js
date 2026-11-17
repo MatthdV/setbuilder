@@ -1,15 +1,15 @@
-// Courbe d'energie : cible (depuis curve_points) vs reelle (energie des
-// morceaux places). Bandeau d'alerte si decrochage (ecart > seuil).
-const CURVE_W = 600, CURVE_H = 160, CURVE_PAD = 8, DROP_THRESHOLD = 3.0;
+// Energy curve: target (from curve_points) vs actual (energy of placed tracks).
+// SVG built from NUMERIC coordinates only — never inject labels / API / user
+// strings into the template (DOM-safety rule of the front). Alert text is set
+// via textContent, not innerHTML.
+const CURVE_W = 360, CURVE_H = 96, CURVE_PAD = 6, DROP_THRESHOLD = 3.0;
 
 function _yFromEnergy(e) {
-  // energie 0..10 -> y (haut = haute energie)
   const t = Math.max(0, Math.min(10, e)) / 10;
   return CURVE_H - CURVE_PAD - t * (CURVE_H - 2 * CURVE_PAD);
 }
 
 function _targetAt(points, pos) {
-  // interpolation lineaire clampee sur curve_points [[pos,energy],...]
   if (!points.length) return 5;
   const sorted = [...points].sort((a, b) => a[0] - b[0]);
   if (pos <= sorted[0][0]) return sorted[0][1];
@@ -24,41 +24,47 @@ function _targetAt(points, pos) {
   return sorted[sorted.length - 1][1];
 }
 
-// slots: [{position, content_id}], realEnergies: {content_id: energy|null}
-function drawCurve(svg, points, slots, realEnergies) {
+// slots: [{position, content_id}], realEnergyOf: (content_id) -> energy|null
+function drawCurve(svg, points, slots, realEnergyOf) {
   const n = slots.length;
   const x = (i) => CURVE_PAD + (n <= 1 ? 0 : (i / (n - 1)) * (CURVE_W - 2 * CURVE_PAD));
   const posOf = (i) => (n <= 1 ? 0 : i / (n - 1));
 
-  // cible : polyline lisse echantillonnee
   const targetPts = [];
   for (let i = 0; i < n; i++) targetPts.push(`${x(i)},${_yFromEnergy(_targetAt(points, posOf(i)))}`);
 
-  // reelle : seulement les slots remplis dont l'energie est connue
   const realPts = [];
   let maxDrop = 0;
   for (let i = 0; i < n; i++) {
     const cid = slots[i].content_id;
-    const e = cid ? realEnergies[cid] : null;
+    const e = cid ? realEnergyOf(cid) : null;
     if (e != null) {
       realPts.push(`${x(i)},${_yFromEnergy(e)}`);
       maxDrop = Math.max(maxDrop, Math.abs(e - _targetAt(points, posOf(i))));
     }
   }
 
+  let grid = "";
+  for (let g = 0; g <= 10; g += 2.5) {
+    const y = _yFromEnergy(g);
+    grid += `<line x1="0" y1="${y}" x2="${CURVE_W}" y2="${y}" stroke="var(--grid)" stroke-width="1" />`;
+  }
+
   svg.innerHTML = `
+    ${grid}
     <polyline points="${targetPts.join(" ")}" fill="none"
-      stroke="var(--curve-target)" stroke-width="2" />
+      stroke="var(--curve-target)" stroke-width="1.5" />
     ${realPts.length > 1
       ? `<polyline points="${realPts.join(" ")}" fill="none"
-          stroke="var(--curve-real)" stroke-width="2" stroke-dasharray="4 3" />`
+          stroke="var(--curve-real)" stroke-width="2" />`
       : ""}
-    ${realPts.map((p) => { const [cx, cy] = p.split(","); return `<circle cx="${cx}" cy="${cy}" r="3" fill="var(--curve-real)" />`; }).join("")}
+    ${realPts.map((p) => { const [cx, cy] = p.split(","); return `<rect x="${cx - 2}" y="${cy - 2}" width="4" height="4" fill="var(--curve-real)" />`; }).join("")}
   `;
 
   const alert = document.getElementById("curve-alert");
+  if (!alert) return;
   if (maxDrop > DROP_THRESHOLD) {
-    alert.textContent = `Décrochage : écart cible/réel jusqu'à ${maxDrop.toFixed(1)} points d'énergie.`;
+    alert.textContent = `Energy drop: target vs actual off by up to ${maxDrop.toFixed(1)} points.`;
     alert.classList.add("show");
   } else {
     alert.classList.remove("show");
