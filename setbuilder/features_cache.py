@@ -127,14 +127,32 @@ def reset_failures(cache: sqlite3.Connection) -> int:
     return n
 
 
-# Énergie RELATIVE à la bibliothèque : rang percentile de l'arousal -> 1..10. L'énergie absolue
-# (energy_score) se tasse sur 6-8 dans une collection homogène (house), ce qui rend la courbe
-# cible et le graphique quasi insensibles au choix des morceaux. Repli sur energy_score
-# si l'arousal manque. Revenir à l'absolu = remplacer REL_ENERGY_SQL par `f.energy_score`.
+# Énergie RELATIVE à la bibliothèque (energy-v2, calculée à la volée, sans ré-analyse).
+# L'arousal seul (modèle DEAM) est un mauvais proxy « club » : très tassé (écart-type 0,07) et
+# il classe la techno/trance sous la house. On le combine, en z-scores par version d'analyse :
+#   0.35 arousal + 0.25 agressivité - 0.25 « relaxed » + 0.15 BPM
+# puis rang percentile -> 1..10. Features/BPM manquants = neutre (z = 0). Repli sur
+# energy_score absolu si l'arousal manque. Poids = constantes ci-dessous.
+ENERGY_W = {"arousal": 0.35, "aggressive": 0.25, "relaxed": -0.25, "bpm": 0.15}
+
+
+def _z(col: str) -> str:
+    # z-score fenêtré par version ; écart-type 0 / valeur absente -> 0
+    mean = f"AVG({col}) OVER w"
+    sd = f"SQRT(MAX(AVG({col} * {col}) OVER w - {mean} * {mean}, 0))"
+    return f"COALESCE(({col} - {mean}) / NULLIF({sd}, 0), 0)"
+
+
 REL_ENERGY_CTE = (
-    "WITH r AS (SELECT content_id, analysis_version, "
-    "PERCENT_RANK() OVER (PARTITION BY analysis_version ORDER BY arousal) AS pr "
-    "FROM features WHERE arousal IS NOT NULL) "
+    "WITH base AS (SELECT f.content_id, f.analysis_version, f.arousal AS a, "
+    "f.mood_aggressive AS g, f.mood_relaxed AS l, t.bpm AS b "
+    "FROM features f LEFT JOIN tracks t ON t.content_id = f.content_id WHERE f.arousal IS NOT NULL), "
+    "sc AS (SELECT content_id, analysis_version, "
+    f"{ENERGY_W['arousal']} * {_z('a')} + {ENERGY_W['aggressive']} * {_z('g')} "
+    f"+ {ENERGY_W['relaxed']} * {_z('l')} + {ENERGY_W['bpm']} * {_z('b')} AS score "
+    "FROM base WINDOW w AS (PARTITION BY analysis_version)), "
+    "r AS (SELECT content_id, analysis_version, "
+    "PERCENT_RANK() OVER (PARTITION BY analysis_version ORDER BY score) AS pr FROM sc) "
 )
 REL_ENERGY_JOIN = "LEFT JOIN r ON r.content_id = f.content_id AND r.analysis_version = f.analysis_version "
 REL_ENERGY_SQL = "COALESCE(CAST(ROUND(1 + 9 * r.pr) AS INTEGER), f.energy_score)"
