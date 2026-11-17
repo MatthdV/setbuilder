@@ -125,3 +125,16 @@ def reset_failures(cache: sqlite3.Connection) -> int:
     n = cache.execute("DELETE FROM analyze_failures").rowcount
     cache.commit()
     return n
+
+
+# Énergie RELATIVE à la bibliothèque : rang percentile de l'arousal -> 1..10. L'énergie absolue
+# (energy_score) se tasse sur 6-8 dans une collection homogène (house), ce qui rend la courbe
+# cible et le graphique quasi insensibles au choix des morceaux. Repli sur energy_score
+# si l'arousal manque. Revenir à l'absolu = remplacer REL_ENERGY_SQL par `f.energy_score`.
+REL_ENERGY_CTE = (
+    "WITH r AS (SELECT content_id, analysis_version, "
+    "PERCENT_RANK() OVER (PARTITION BY analysis_version ORDER BY arousal) AS pr "
+    "FROM features WHERE arousal IS NOT NULL) "
+)
+REL_ENERGY_JOIN = "LEFT JOIN r ON r.content_id = f.content_id AND r.analysis_version = f.analysis_version "
+REL_ENERGY_SQL = "COALESCE(CAST(ROUND(1 + 9 * r.pr) AS INTEGER), f.energy_score)"

@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <noscript><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
-  <link rel="stylesheet" href="/static/tokens.css?v=15" />
-  <link rel="stylesheet" href="/static/app.css?v=15" />
+  <link rel="stylesheet" href="/static/tokens.css?v=16" />
+  <link rel="stylesheet" href="/static/app.css?v=16" />
 </head>
 <body>
   <div class="sheet">
@@ -80,13 +80,15 @@
       <!-- RIGHT: galaxy + energy + slots + suggestions + analyze -->
       <div class="right">
         <div class="sec galaxy">
-          <div class="sh"><span class="t">Galaxy</span><span class="fig" id="gal-fig">FIG.01 — UMAP</span></div>
+          <div class="sh"><span class="t">Galaxy</span><button class="st-x" id="gal-color" title="Color the galaxy by key or by energy">Color: key</button><span class="fig" id="gal-fig">FIG.01 — UMAP</span></div>
           <canvas id="galaxy-canvas"></canvas>
           <div class="galaxy-empty" id="galaxy-empty" style="display:none">Library not analyzed — run the analysis batch.</div>
           <div class="gleg">
             <span><i style="background:#8c8c84"></i>cloud</span>
             <span><i style="background:#ff3b1f"></i>set path</span>
-            <span><i style="background:hsl(220 58% 52%)"></i>key node</span>
+            <span id="gal-leg-key"><i style="background:hsl(220 58% 52%)"></i>color = key</span>
+            <span id="gal-leg-en" hidden><i style="background:linear-gradient(90deg,hsl(220 80% 55%),hsl(110 80% 50%),hsl(0 85% 55%))"></i>color = energy (low → high)</span>
+            <span><i style="background:#fff"></i>ring = selected · bright = 12 nearest</span>
           </div>
         </div>
 
@@ -129,14 +131,14 @@
   <div class="hovercard" id="hovercard"></div>
   <div id="toast" class="toast"></div>
 
-  <script src="/static/player.js?v=15"></script>
-  <script src="/static/camelot.js?v=15"></script>
-  <script src="/static/curve.js?v=15"></script>
-  <script src="/static/timeline.js?v=15"></script>
-  <script src="/static/suggestions.js?v=15"></script>
-  <script src="/static/galaxy.js?v=15"></script>
-  <script src="/static/analyze.js?v=15"></script>
-  <script src="/static/library.js?v=15"></script>
-  <script src="/static/app.js?v=15"></script>
+  <script src="/static/player.js?v=16"></script>
+  <script src="/static/camelot.js?v=16"></script>
+  <script src="/static/curve.js?v=16"></script>
+  <script src="/static/timeline.js?v=16"></script>
+  <script src="/static/suggestions.js?v=16"></script>
+  <script src="/static/galaxy.js?v=16"></script>
+  <script src="/static/analyze.js?v=16"></script>
+  <script src="/static/library.js?v=16"></script>
+  <script src="/static/app.js?v=16"></script>
 </body>
 </html>

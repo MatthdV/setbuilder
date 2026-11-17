@@ -5,8 +5,12 @@
 // handlers.onSelect(content_id). No native title tooltip.
 //
 // byId: index from /library (content_id -> {camelot, ...}) for colors/hovercard.
-function drawGalaxy(canvas, points, byId, setPath, forcedIds, handlers) {
+function drawGalaxy(canvas, points, byId, setPath, forcedIds, opts, handlers) {
   handlers = handlers || {};
+  opts = opts || {};
+  const energyMode = opts.colorMode === "energy";
+  const nb = opts.neighbors || null, selId = opts.selectedId || null;
+  const hasSel = !!(selId || nb);
   const emptyEl = document.getElementById("galaxy-empty");
 
   if (!points || !points.length) {
@@ -40,15 +44,41 @@ function drawGalaxy(canvas, points, byId, setPath, forcedIds, handlers) {
 
   ctx.clearRect(0, 0, W, H);
 
-  // cloud colored by key
-  proj.forEach(({ p, X, Y }) => {
+  // energy 1..10 -> blue (low) .. green .. red (high)
+  const enColor = (e) => `hsl(${Math.round(220 - ((Math.max(1, Math.min(10, e)) - 1) / 9) * 220)} 80% 55%)`;
+  const colorOf = (p) => {
     const meta = byId && byId[p.content_id];
-    const c = meta && camelotColor(meta.camelot);
-    ctx.globalAlpha = c ? 0.5 : 0.38;
+    if (energyMode) {
+      const e = meta && opts.energyOf ? opts.energyOf(p.content_id) : null;
+      return e != null ? enColor(e) : null;
+    }
+    return meta && camelotColor(meta.camelot);
+  };
+
+  // cloud (dimmed while a track is selected so its neighbours stand out)
+  proj.forEach(({ p, X, Y }) => {
+    const c = colorOf(p);
+    ctx.globalAlpha = (hasSel ? 0.22 : (c ? 0.5 : 0.38)) * (energyMode && c ? 1.3 : 1);
     ctx.fillStyle = c || "#8c8c84";
     ctx.fillRect(X, Y, 1.8, 1.8);
   });
   ctx.globalAlpha = 1;
+  if (nb) {
+    proj.forEach(({ p, X, Y }) => {
+      if (!nb.has(p.content_id)) return;
+      ctx.fillStyle = colorOf(p) || "#f4f4ef";
+      ctx.fillRect(X - 3, Y - 3, 6, 6);
+      ctx.strokeStyle = "#f4f4ef"; ctx.lineWidth = 1;
+      ctx.strokeRect(X - 3, Y - 3, 6, 6);
+    });
+  }
+  if (selId && byProj[selId]) {
+    const o = byProj[selId];
+    ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(o.X, o.Y, 9, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = colorOf(o.p) || "#ffffff";
+    ctx.fillRect(o.X - 2.5, o.Y - 2.5, 5, 5);
+  }
 
   // set path
   const forced = new Set(forcedIds || []);
@@ -62,7 +92,7 @@ function drawGalaxy(canvas, points, byId, setPath, forcedIds, handlers) {
   }
   pathPts.forEach((o) => {
     const meta = byId && byId[o.p.content_id];
-    const c = (meta && camelotColor(meta.camelot)) || "#f4f4ef";
+    const c = colorOf(o.p) || "#f4f4ef";
     ctx.fillStyle = forced.has(o.p.content_id) ? "#ff3b1f" : c;
     ctx.fillRect(o.X - 3.5, o.Y - 3.5, 7, 7);
     ctx.lineWidth = 1;

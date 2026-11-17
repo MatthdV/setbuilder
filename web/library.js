@@ -41,7 +41,7 @@ function createLibraryView(container, opts) {
     genre: (a, b) => sCmp(a.genre || a.top_genre, b.genre || b.top_genre),
     key: (a, b) => sCmp(a.camelot, b.camelot),
     bpm: (a, b) => nCmp(a.bpm, b.bpm),
-    energy: (a, b) => nCmp(a.energy_score, b.energy_score),
+    energy: (a, b) => nCmp(a.energy != null ? a.energy : a.energy_score, b.energy != null ? b.energy : b.energy_score),
   };
 
   function buildIndex() {
@@ -57,7 +57,7 @@ function createLibraryView(container, opts) {
       // Valeurs manquantes toujours en bas, quel que soit le sens du tri.
       const miss = (t) => {
         const v = sortKey === "genre" ? (t.genre || t.top_genre)
-          : sortKey === "key" ? t.camelot : sortKey === "energy" ? t.energy_score : t[sortKey];
+          : sortKey === "key" ? t.camelot : sortKey === "energy" ? (t.energy != null ? t.energy : t.energy_score) : t[sortKey];
         return v == null || v === "";
       };
       view.sort((a, b) => {
@@ -108,7 +108,7 @@ function createLibraryView(container, opts) {
     const bpm = document.createElement("span");
     bpm.className = "r bpm"; bpm.textContent = t.bpm != null ? Math.round(t.bpm) : "—";
     const key = document.createElement("span"); key.className = "r"; key.append(keyChip(t.camelot));
-    const en = document.createElement("span"); en.className = "r"; en.append(energyBar(t.energy_score));
+    const en = document.createElement("span"); en.className = "r"; en.append(energyBar(t.energy != null ? t.energy : t.energy_score));
     const gn = document.createElement("span"); gn.className = "gn";
     gn.textContent = t.genre || t.top_genre || "";
     r.append(idx, nm, bpm, key, en, gn);

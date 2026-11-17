@@ -8,6 +8,8 @@ import sqlite3
 
 import numpy as np
 
+from setbuilder.features_cache import REL_ENERGY_CTE, REL_ENERGY_JOIN, REL_ENERGY_SQL
+
 from setbuilder.scoring import (
     DEFAULT_WEIGHTS,
     Candidate,
@@ -33,10 +35,12 @@ def load_candidates(
 ) -> list[Candidate]:
     """Candidats = tracks ⨝ features (LEFT, à `analysis_version`), filtres optionnels."""
     sql = [
+        REL_ENERGY_CTE +
         "SELECT t.content_id, t.title, t.artist, t.bpm, t.camelot, t.moment, t.ambiance, "
-        "f.energy_score, f.muq_embedding, f.muq_dim "
+        f"{REL_ENERGY_SQL}, f.muq_embedding, f.muq_dim "
         "FROM tracks t "
-        "LEFT JOIN features f ON f.content_id = t.content_id AND f.analysis_version = ?"
+        "LEFT JOIN features f ON f.content_id = t.content_id AND f.analysis_version = ? "
+        + REL_ENERGY_JOIN
     ]
     params: list = [analysis_version]
     where = []
