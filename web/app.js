@@ -360,6 +360,8 @@ function askDialog({ title, text, label, value, ok }) {
       resolve(dlg.returnValue === "ok" ? (label ? input.value.trim() : "") : null);
     };
     dlg.addEventListener("close", done);
+    // Enter in the input = OK (the browser would otherwise trigger the FIRST submit button = Cancel)
+    input.onkeydown = (ev) => { if (ev.key === "Enter") { ev.preventDefault(); $("dlg-ok").click(); } };
     dlg.returnValue = "cancel";
     dlg.showModal();
     if (label) { input.focus(); input.select(); }
