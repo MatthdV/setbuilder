@@ -27,6 +27,12 @@ if curl -s "$URL" >/dev/null 2>&1; then
   exit 0
 fi
 
+if [ ! -x "$DIR/.venv/bin/python" ]; then
+  echo "setbuilder: Python env missing at $DIR/.venv — run: uv sync" >&2
+  read -r "?Press Enter to close."
+  exit 1
+fi
+
 # Open the window as soon as the server answers, then run the server in front.
 ( for i in {1..60}; do curl -s "$URL" >/dev/null 2>&1 && { open_app; break; }; sleep 0.25; done ) &
 

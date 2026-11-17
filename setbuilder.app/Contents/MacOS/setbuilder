@@ -25,7 +25,16 @@ if curl -s "$URL" >/dev/null 2>&1; then
   exit 0
 fi
 
+# Fail loudly: launched from Finder there is no terminal, so a missing venv was silent.
+if [ ! -x "$REPO/.venv/bin/python" ]; then
+  osascript -e 'display alert "setbuilder" message "Python env missing: '"$REPO"'/.venv. Run: uv sync"'
+  exit 1
+fi
+
 # Open the window once the server answers; run the server in front as the app.
 ( for i in {1..60}; do curl -s "$URL" >/dev/null 2>&1 && { open_app; break; }; sleep 0.25; done ) &
+
+# Server died before answering (bad DB, port taken...)? Say so instead of staying silent.
+( sleep 20; curl -s "$URL" >/dev/null 2>&1 || osascript -e 'display alert "setbuilder" message "Server did not start on port '"$PORT"'."' ) &
 
 exec "$REPO/.venv/bin/python" -c "import uvicorn; from setbuilder.api import create_app; uvicorn.run(create_app('$DB'), host='127.0.0.1', port=${PORT})"
