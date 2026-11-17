@@ -94,7 +94,7 @@ input, select { font: inherit; }
 .en .bar i { background: #26261e; }
 .en .bar i.on { background: var(--ink); }
 .en .bar i.on.hi { background: var(--haz); }
-.en .n { font-family: var(--disp); font-weight: 900; font-size: 12px; width: 18px; text-align: right; }
+.en .n { white-space: nowrap; font-family: var(--disp); font-weight: 900; font-size: 12px; width: 18px; text-align: right; }
 .lrow.sel .en .bar i { background: #c22f16; } .lrow.sel .en .bar i.on { background: #0a0a09; } .lrow.sel .en .n { color: #0a0a09; }
 
 /* ---- right column ---- */
@@ -195,4 +195,15 @@ input, select { font: inherit; }
   .left { border-right: 0; border-bottom: 2px solid var(--ink); grid-template-rows: auto auto auto auto; }
   .lib-viewport { height: 360px; }
   .right { overflow: visible; }
+}
+
+/* ---- phones: no horizontal overflow ---- */
+@media (max-width: 600px) {
+  .cmd .f input, .cmd .f select { width: 100%; }
+  .cmd .f { flex: 1 1 40%; min-width: 0; }
+  .cmd .f input.sm { width: 100%; }
+  .lhead, .lrow { grid-template-columns: 34px 1fr 46px 46px 76px; }
+  .lhead span:nth-child(6), .lrow span:nth-child(6) { display: none; }
+  .readout .exp { flex: 1 1 100%; }
+  .en { gap: 4px; }
 }

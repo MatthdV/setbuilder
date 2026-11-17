@@ -52,7 +52,19 @@ function createLibraryView(container, opts) {
 
   function recompute() {
     view = query ? all.filter((t) => t._search.includes(query)) : all.slice();
-    if (sortKey && CMP[sortKey]) view.sort((a, b) => CMP[sortKey](a, b) * sortDir);
+    if (sortKey && CMP[sortKey]) {
+      // Valeurs manquantes toujours en bas, quel que soit le sens du tri.
+      const miss = (t) => {
+        const v = sortKey === "genre" ? (t.genre || t.top_genre)
+          : sortKey === "key" ? t.camelot : sortKey === "energy" ? t.energy_score : t[sortKey];
+        return v == null || v === "";
+      };
+      view.sort((a, b) => {
+        const ma = miss(a), mb = miss(b);
+        if (ma !== mb) return ma ? 1 : -1;
+        return CMP[sortKey](a, b) * sortDir;
+      });
+    }
     container.scrollTop = 0;
     render();
     onCount(view.length, all.length);
