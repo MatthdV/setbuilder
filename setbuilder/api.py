@@ -186,7 +186,7 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     rekordbox_probe = rekordbox_probe or _default_rekordbox_probe
     status_path = status_path_for(db_path)
     analyze_lock = threading.Lock()
-    placement_lock = threading.Lock()
+    placement_lock = threading.Lock()  # mono-process (uvicorn 1 worker) : suffit pour un outil local
     app = FastAPI(title="setbuilder")
     # Pas de CORS : le front est servi en même origine. Garde locale : l'Host doit être
     # loopback (anti DNS-rebinding) et un Origin éventuel doit l'être aussi (anti CSRF,
@@ -332,7 +332,6 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
         forced = by_id.get(body.content_id)
         if forced is None:
             raise HTTPException(status_code=404, detail="morceau introuvable dans la lib")
-        _check_placement(rec, pos, body.content_id, body.overwrite)
         durations = _durations(conn, rec)
         ctx = build_slot_context(rec, pos, by_id, durations)
         next_ = _next_filled(rec, pos, by_id)
