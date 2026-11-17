@@ -1,0 +1,31 @@
+#!/bin/zsh
+# setbuilder.app — the app process IS the local server. Quit from the Dock
+# (Cmd-Q) to stop it. On launch it opens a chromeless app window.
+# Absolute paths: this is a personal launcher, safe to move to /Applications.
+REPO="/Users/matthieudevillele/Documents/rekordbox/setbuilder"
+DB="${REPO}.db"
+PORT=8000
+URL="http://127.0.0.1:${PORT}/"
+
+open_app() {
+  if [ -d "/Applications/Google Chrome.app" ]; then
+    open -na "Google Chrome" --args --app="$URL" --new-window
+  elif [ -d "/Applications/Brave Browser.app" ]; then
+    open -na "Brave Browser" --args --app="$URL" --new-window
+  else
+    open "$URL"
+  fi
+}
+
+cd "$REPO" 2>/dev/null || { osascript -e 'display alert "setbuilder" message "Repo not found at '"$REPO"'."'; exit 1; }
+
+# Already running? Just open the window and exit (acts as a launcher).
+if curl -s "$URL" >/dev/null 2>&1; then
+  open_app
+  exit 0
+fi
+
+# Open the window once the server answers; run the server in front as the app.
+( for i in {1..60}; do curl -s "$URL" >/dev/null 2>&1 && { open_app; break; }; sleep 0.25; done ) &
+
+exec "$REPO/.venv/bin/python" -c "import uvicorn; from setbuilder.api import create_app; uvicorn.run(create_app('$DB'), host='127.0.0.1', port=${PORT})"
