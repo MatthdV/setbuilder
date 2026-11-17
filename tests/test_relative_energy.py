@@ -44,3 +44,23 @@ def test_falls_back_to_absolute_without_arousal(tmp_path):
     path, _ = _db(tmp_path, with_arousal=False)
     rows = TestClient(create_app(path)).get("/library").json()
     assert {r["energy"] for r in rows} == {7}
+
+
+def test_composite_ranks_aggressive_fast_above_relaxed_slow(tmp_path):
+    path = str(tmp_path / "c.db")
+    c = sqlite3.connect(path)
+    c.execute("""CREATE TABLE tracks (content_id TEXT PRIMARY KEY, title TEXT, artist TEXT, bpm REAL,
+                 camelot TEXT, moment TEXT, ambiance TEXT, genre TEXT, duration_s REAL)""")
+    open_features(c); open_sets(c)
+    spec = {  # même arousal : seuls agressivité / relaxed / BPM distinguent les morceaux
+        "peak": (0.6, 0.8, 0.05, 135), "mid": (0.6, 0.3, 0.3, 128),
+        "chill": (0.6, 0.05, 0.9, 118), "mid2": (0.6, 0.35, 0.25, 126),
+    }
+    for cid, (ar, ag, rl, bpm) in spec.items():
+        c.execute("INSERT INTO tracks (content_id, title, bpm) VALUES (?, ?, ?)", (cid, cid, bpm))
+        upsert_features(c, cid, {"arousal": ar, "mood_aggressive": ag, "mood_relaxed": rl,
+                                 "energy_score": 7, "analysis_version": ANALYSIS_VERSION})
+    c.commit()
+    by = {r["content_id"]: r["energy"] for r in TestClient(create_app(path)).get("/library").json()}
+    assert by["peak"] > by["mid2"] >= by["mid"] > by["chill"]
+    assert by["peak"] == 10 and by["chill"] == 1
