@@ -172,7 +172,9 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     async def _local_only(request, call_next):
         from urllib.parse import urlsplit  # noqa: PLC0415
         try:
-            host = urlsplit("//" + (request.headers.get("host") or "")).hostname or ""
+            u = urlsplit("//" + (request.headers.get("host") or ""))
+            u.port  # noqa: B018 - lève ValueError si le port est invalide
+            host = u.hostname or ""
         except ValueError:
             host = ""
         origin = request.headers.get("origin")
@@ -180,7 +182,9 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
             return JSONResponse(status_code=403, content={"detail": "hôte non autorisé"})
         if origin and origin != "null":
             try:
-                o_host = urlsplit(origin).hostname or ""
+                u = urlsplit(origin)
+                u.port  # noqa: B018
+                o_host = u.hostname or ""
             except ValueError:
                 o_host = ""
             if o_host not in {"127.0.0.1", "localhost", "::1", "testserver"}:
