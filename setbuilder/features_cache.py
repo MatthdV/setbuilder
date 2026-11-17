@@ -132,7 +132,9 @@ def reset_failures(cache: sqlite3.Connection) -> int:
 # il classe la techno/trance sous la house. On le combine, en z-scores par version d'analyse :
 #   0.35 arousal + 0.25 agressivité - 0.25 « relaxed » + 0.15 BPM
 # puis rang percentile -> 1..10. Features/BPM manquants = neutre (z = 0). Repli sur
-# energy_score absolu si l'arousal manque. Poids = constantes ci-dessous.
+# energy_score absolu si l'arousal manque (ces lignes sont exclues de la population du rang,
+# volontairement). tracks.content_id est une PRIMARY KEY : la jointure ne duplique rien.
+# Poids = constantes ci-dessous.
 ENERGY_W = {"arousal": 0.35, "aggressive": 0.25, "relaxed": -0.25, "bpm": 0.15}
 
 
