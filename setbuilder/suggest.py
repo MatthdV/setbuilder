@@ -8,7 +8,7 @@ import sqlite3
 from setbuilder.candidates import load_candidates, rank
 from setbuilder.scoring import DEFAULT_WEIGHTS, ScoreBreakdown, Weights
 from setbuilder.sets_repo import SetRecord
-from setbuilder.keymoves import key_move
+from setbuilder.keymoves import key_move, moves_from
 from setbuilder.slot_context import build_slot_context, candidates_by_id
 
 
@@ -30,16 +30,18 @@ def _quotas(delta: float | None) -> dict[str, int]:
 def diversify(ranked: list[ScoreBreakdown], prev, by_id, delta, limit: int) -> list[ScoreBreakdown]:
     """Évite une liste 100 % « même clé » : garantit des quotas par famille de clé
     (perfect / boost / drop / mood), complétés par le meilleur score restant."""
-    if prev is None or not prev.camelot:
+    if limit <= 0:
+        return []
+    if prev is None or not moves_from(prev.camelot):  # pas de clé Camelot valide : classement brut
         return ranked[:limit]
 
     def family(b: ScoreBreakdown) -> str:
         cand = by_id.get(b.content_id)
         if cand is None or cand.camelot is None:
             return "skip"  # clé inconnue : seulement en complément, pas dans un quota
-        if cand.camelot == prev.camelot:
-            return "perfect"
         m = key_move(prev.camelot, cand.camelot)
+        if m is not None and m.category == "perfect" and cand.camelot.strip().upper() == prev.camelot.strip().upper():
+            return "perfect"
         if m:
             return m.category
         return "skip" if b.dimensions["key"][1] <= 0.0 else "other"  # clash : jamais un « quota »
