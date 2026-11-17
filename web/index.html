@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <noscript><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
-  <link rel="stylesheet" href="/static/tokens.css?v=9" />
-  <link rel="stylesheet" href="/static/app.css?v=9" />
+  <link rel="stylesheet" href="/static/tokens.css?v=12" />
+  <link rel="stylesheet" href="/static/app.css?v=12" />
 </head>
 <body>
   <div class="sheet">
@@ -37,7 +37,10 @@
           <div class="f"><span class="lbl">Mode</span>
             <select id="f-mode"><option value="count">count</option><option value="duration">duration</option></select>
           </div>
-          <div class="f"><span class="lbl">Target</span><input id="f-target" class="sm" type="number" value="12" /></div>
+          <div class="f"><span class="lbl">Type</span>
+            <select id="f-type"><option value="warmup">warm-up</option><option value="main" selected>main set</option><option value="closing">closing</option><option value="after">after</option></select>
+          </div>
+          <div class="f" id="f-target-wrap" hidden><span class="lbl">Length (min)</span><input id="f-target" class="sm" type="number" min="1" value="60" /></div>
           <div class="f"><span class="lbl">Slots</span><input id="f-slots" class="sm" type="number" value="12" /></div>
           <button class="go" id="btn-create">Create</button>
           <div class="f"><span class="lbl">Load</span>
@@ -50,6 +53,7 @@
           <span class="p">&gt;</span>
           <input id="lib-search" placeholder="filter — title / artist / genre / key / bpm" />
           <span class="lbl" id="lib-count">loading…</span>
+          <button class="st-x" id="lib-top" title="Back to top" hidden>↑ top</button>
         </div>
 
         <div class="player" id="player" hidden>
@@ -123,14 +127,14 @@
   <div class="hovercard" id="hovercard"></div>
   <div id="toast" class="toast"></div>
 
-  <script src="/static/player.js?v=11"></script>
-  <script src="/static/camelot.js?v=9"></script>
-  <script src="/static/curve.js?v=9"></script>
-  <script src="/static/timeline.js?v=9"></script>
-  <script src="/static/suggestions.js?v=9"></script>
-  <script src="/static/galaxy.js?v=9"></script>
-  <script src="/static/analyze.js?v=9"></script>
-  <script src="/static/library.js?v=9"></script>
-  <script src="/static/app.js?v=9"></script>
+  <script src="/static/player.js?v=12"></script>
+  <script src="/static/camelot.js?v=12"></script>
+  <script src="/static/curve.js?v=12"></script>
+  <script src="/static/timeline.js?v=12"></script>
+  <script src="/static/suggestions.js?v=12"></script>
+  <script src="/static/galaxy.js?v=12"></script>
+  <script src="/static/analyze.js?v=12"></script>
+  <script src="/static/library.js?v=12"></script>
+  <script src="/static/app.js?v=12"></script>
 </body>
 </html>

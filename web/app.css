@@ -225,3 +225,11 @@ input, select { font: inherit; }
 .player input[type=range] { flex: 1; min-width: 40px; accent-color: var(--haz); }
 .pl-time { color: var(--dim); font-size: 10px; white-space: nowrap; }
 .btn-sm.pv { margin-right: 6px; }
+/* visible scrollbar on the library (overlay scrollbars hide how long the list is) */
+.lib-viewport { scrollbar-width: thin; scrollbar-color: var(--dim) var(--bg); overscroll-behavior: contain; }
+.lib-viewport::-webkit-scrollbar { width: 12px; }
+.lib-viewport::-webkit-scrollbar-track { background: var(--box); }
+.lib-viewport::-webkit-scrollbar-thumb { background: var(--dim); border: 2px solid var(--box); min-height: 40px; }
+.lib-viewport::-webkit-scrollbar-thumb:hover { background: var(--haz); }
+.search .st-x[hidden], .cmd .f[hidden] { display: none; }
+.search .st-x { border: 1px solid var(--box); background: transparent; color: var(--dim); padding: 2px 8px; font-size: 10px; } .search .st-x:hover { color: var(--haz); border-color: var(--haz); }

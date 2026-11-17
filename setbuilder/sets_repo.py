@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS sets (
     target           REAL,
     curve_json       TEXT,
     analysis_version TEXT,
-    created_at       TEXT
+    created_at       TEXT,
+    set_type         TEXT
 );
 CREATE TABLE IF NOT EXISTS set_slots (
     set_id     TEXT,
@@ -52,10 +53,14 @@ class SetRecord:
     curve_points: list[tuple[float, float]]
     analysis_version: str
     slots: list[Slot]
+    set_type: str | None = None
 
 
 def open_sets(cache: sqlite3.Connection) -> None:
     cache.executescript(_SCHEMA)
+    cols = {r[1] for r in cache.execute("PRAGMA table_info(sets)")}
+    if "set_type" not in cols:  # migration d'une base antérieure
+        cache.execute("ALTER TABLE sets ADD COLUMN set_type TEXT")
     cache.commit()
 
 
@@ -68,15 +73,16 @@ def create_set(
     analysis_version: str,
     *,
     n_slots: int,
+    set_type: str | None = None,
 ) -> str:
     if mode not in _MODES:
         raise ValueError(f"mode invalide : {mode!r} (attendu : {sorted(_MODES)})")
     set_id = uuid4().hex
     cache.execute(
-        "INSERT INTO sets (set_id, name, mode, target, curve_json, analysis_version, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO sets (set_id, name, mode, target, curve_json, analysis_version, created_at, set_type) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (set_id, name, mode, float(target), json.dumps(curve_points), analysis_version,
-         datetime.now(timezone.utc).isoformat(timespec="seconds")),
+         datetime.now(timezone.utc).isoformat(timespec="seconds"), set_type),
     )
     cache.executemany(
         "INSERT INTO set_slots (set_id, position, content_id) VALUES (?, ?, NULL)",
@@ -88,12 +94,12 @@ def create_set(
 
 def get_set(cache: sqlite3.Connection, set_id: str) -> SetRecord | None:
     row = cache.execute(
-        "SELECT name, mode, target, curve_json, analysis_version FROM sets WHERE set_id = ?",
+        "SELECT name, mode, target, curve_json, analysis_version, set_type FROM sets WHERE set_id = ?",
         (set_id,),
     ).fetchone()
     if row is None:
         return None
-    name, mode, target, curve_json, analysis_version = row
+    name, mode, target, curve_json, analysis_version, set_type = row
     slot_rows = cache.execute(
         "SELECT position, content_id, is_anchor, is_forced FROM set_slots "
         "WHERE set_id = ? ORDER BY position",
@@ -101,7 +107,7 @@ def get_set(cache: sqlite3.Connection, set_id: str) -> SetRecord | None:
     ).fetchall()
     slots = [Slot(pos, cid, bool(anchor), bool(forced)) for pos, cid, anchor, forced in slot_rows]
     points = [tuple(p) for p in json.loads(curve_json)]
-    return SetRecord(set_id, name, mode, target, points, analysis_version, slots)
+    return SetRecord(set_id, name, mode, target, points, analysis_version, slots, set_type)
 
 
 def list_sets(cache: sqlite3.Connection) -> list[SetRecord]:

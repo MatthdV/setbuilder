@@ -22,11 +22,11 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
-from setbuilder.analyze import ANALYSIS_VERSION, count_pending
+from setbuilder.analyze import ANALYSIS_VERSION, count_failed, count_pending
 from setbuilder.analyze_job import (
     pid_alive,
     read_status,
@@ -38,7 +38,8 @@ from setbuilder.analyze_launch import spawn_analyze
 from setbuilder.cache import apply_pragmas, ensure_schema
 from setbuilder.export import backup_db, export_set
 from setbuilder.files import resolve_file
-from setbuilder.features_cache import open_features, resolve_analysis_version
+from setbuilder.features_cache import open_features, reset_failures, resolve_analysis_version
+from setbuilder.curve import PRESETS
 from setbuilder.impact import ImpactReport, forced_impact
 from setbuilder.scoring import Candidate, ScoreBreakdown
 from setbuilder.sets_repo import (
@@ -58,6 +59,7 @@ from setbuilder.timeline import slot_start_times
 
 class ForceBody(BaseModel):
     content_id: str
+    overwrite: bool = False
 
 
 def _serialize_breakdown(b: ScoreBreakdown) -> dict:
@@ -87,15 +89,25 @@ class SetCreate(BaseModel):
     name: Annotated[str, StringConstraints(min_length=1, max_length=120)]
     mode: Literal["count", "duration"]
     target: Annotated[float, Field(gt=0, allow_inf_nan=False)]
-    curve_points: Annotated[list[_Pt], Field(min_length=1, max_length=64)]
+    curve_points: Annotated[list[_Pt], Field(min_length=1, max_length=64)] | None = None
+    set_type: Literal["warmup", "main", "closing", "after"] | None = None
     n_slots: Annotated[int, Field(ge=1, le=200)]
     analysis_version: str = ANALYSIS_VERSION
+
+    @model_validator(mode="after")
+    def _curve_or_type(self):
+        if self.curve_points is None and self.set_type is None:
+            raise ValueError("set_type ou curve_points requis")
+        if self.curve_points is None:
+            self.curve_points = [tuple(p) for p in PRESETS[self.set_type]]
+        return self
 
 
 class SlotUpdate(BaseModel):
     content_id: str
-    is_anchor: bool = False
-    is_forced: bool = False
+    overwrite: bool = False
+    is_anchor: bool | None = None  # None : conserve l'ancre existante si on écrase un slot protégé
+    is_forced: bool | None = None
 
 
 def _durations(conn: sqlite3.Connection, rec: SetRecord) -> list[float | None]:
@@ -110,6 +122,7 @@ def _serialize_set(conn: sqlite3.Connection, rec: SetRecord) -> dict:
         "set_id": rec.set_id, "name": rec.name, "mode": rec.mode, "target": rec.target,
         "curve_points": [list(p) for p in rec.curve_points],
         "analysis_version": rec.analysis_version,
+        "set_type": rec.set_type or "custom",
         "slots": [
             {"position": s.position, "content_id": s.content_id, "is_anchor": s.is_anchor,
              "is_forced": s.is_forced, "start_time_s": starts[i]}
@@ -124,6 +137,17 @@ def _require_set(conn: sqlite3.Connection, set_id: str) -> SetRecord:
         raise HTTPException(status_code=404, detail="set introuvable")
     rec.analysis_version = resolve_analysis_version(conn, rec.analysis_version)
     return rec
+
+
+def _check_placement(rec: SetRecord, pos: int, content_id: str, overwrite: bool) -> None:
+    """409 si le morceau est déjà dans un autre slot, ou si le slot cible est
+    ancré/forcé et que l'écrasement n'est pas explicite."""
+    for s in rec.slots:
+        if s.content_id == content_id and s.position != pos:
+            raise HTTPException(status_code=409, detail="duplicate_track")
+    cur = rec.slots[pos]
+    if cur.content_id and (cur.is_anchor or cur.is_forced) and cur.content_id != content_id and not overwrite:
+        raise HTTPException(status_code=409, detail="slot_protected")
 
 
 def _default_rb_provider():
@@ -165,6 +189,7 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     rekordbox_probe = rekordbox_probe or _default_rekordbox_probe
     status_path = status_path_for(db_path)
     analyze_lock = threading.Lock()
+    placement_lock = threading.Lock()  # mono-process (uvicorn 1 worker) : suffit pour un outil local
     app = FastAPI(title="setbuilder")
     # Pas de CORS : le front est servi en même origine. Garde locale : l'Host doit être
     # loopback (anti DNS-rebinding) et un Origin éventuel doit l'être aussi (anti CSRF,
@@ -289,7 +314,7 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     def post_set(body: SetCreate):
         try:
             sid = create_set(conn, body.name, body.mode, body.target, body.curve_points,
-                             body.analysis_version, n_slots=body.n_slots)
+                             body.analysis_version, n_slots=body.n_slots, set_type=body.set_type)
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
         return {"set_id": sid}
@@ -326,8 +351,14 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
             raise HTTPException(status_code=404, detail="slot hors bornes")
         if conn.execute("SELECT 1 FROM tracks WHERE content_id = ?", (body.content_id,)).fetchone() is None:
             raise HTTPException(status_code=404, detail="morceau introuvable dans la lib")
-        place_track(conn, set_id, pos, body.content_id,
-                    is_anchor=body.is_anchor, is_forced=body.is_forced)
+        with placement_lock:  # check + écriture atomiques (pas de doublon par requêtes concurrentes)
+            rec = _require_set(conn, set_id)
+            _check_placement(rec, pos, body.content_id, body.overwrite)
+            cur = rec.slots[pos]
+            keep = body.overwrite and cur.content_id is not None
+            anchor = body.is_anchor if body.is_anchor is not None else (cur.is_anchor if keep else False)
+            forced = body.is_forced if body.is_forced is not None else (cur.is_forced if keep else False)
+            place_track(conn, set_id, pos, body.content_id, is_anchor=anchor, is_forced=forced)
         return _serialize_set(conn, _require_set(conn, set_id))["slots"][pos]
 
     @app.delete("/sets/{set_id}/slots/{pos}")
@@ -358,7 +389,11 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
         ctx = build_slot_context(rec, pos, by_id, durations)
         next_ = _next_filled(rec, pos, by_id)
         report = forced_impact(forced, ctx.prev, next_, ctx.target_energy)
-        place_track(conn, set_id, pos, body.content_id, is_forced=True)
+        with placement_lock:
+            rec = _require_set(conn, set_id)
+            _check_placement(rec, pos, body.content_id, body.overwrite)
+            keep_anchor = body.overwrite and rec.slots[pos].is_anchor
+            place_track(conn, set_id, pos, body.content_id, is_anchor=keep_anchor, is_forced=True)
         slot = _serialize_set(conn, _require_set(conn, set_id))["slots"][pos]
         return {"slot": slot, "impact": _serialize_impact(report)}
 
@@ -418,11 +453,16 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     @app.get("/analyze/pending")
     def analyze_pending():
         pending, total = count_pending(conn)
-        return {"pending": pending, "total": total}
+        return {"pending": pending, "total": total, "failed": count_failed(conn)}
 
     @app.get("/analyze/status")
     def analyze_status():
         return read_status(status_path)  # jamais 500 ; idle/running/stale/done/error
+
+    @app.post("/analyze/failures/reset")
+    def analyze_reset_failures():
+        """Retry délibéré des morceaux dont l'analyse a échoué."""
+        return {"reset": reset_failures(conn)}
 
     @app.post("/analyze")
     def analyze_start():

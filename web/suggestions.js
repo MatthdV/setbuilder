@@ -12,6 +12,28 @@ const _DIM_EN = {
 };
 const _NA = new Set(Object.keys(_DIM_EN));
 
+// Backend labels are French; translate the known shapes, pass anything else through.
+function trLabel(l) {
+  if (_DIM_EN[l]) return _DIM_EN[l];
+  return String(l)
+    .replace("key ✓ (même)", "key ✓ (same)")
+    .replace(/^énergie /, "energy ")
+    .replace(/^ambiance /, "mood ");
+}
+function trWarning(w) {
+  const m = /^(.*?) \((.*)\)$/.exec(w);
+  const label = m ? trLabel(m[2]) : "";
+  const head = m ? m[1] : w;
+  const map = [
+    [/^énergie loin de la cible/, "energy far from target"],
+    [/^clash de key avec le précédent/, "key clash with previous"],
+    [/^clash de key avec le suivant/, "key clash with next"],
+    [/^saut de BPM depuis le précédent/, "BPM jump from previous"],
+  ];
+  for (const [re, en] of map) if (re.test(head)) return label ? `${en} (${label})` : en;
+  return w;
+}
+
 function renderSuggestions(listEl, breakdowns, titleOf, keyOf, onPlace) {
   listEl.textContent = "";
   if (!breakdowns.length) {
@@ -45,7 +67,7 @@ function renderSuggestions(listEl, breakdowns, titleOf, keyOf, onPlace) {
       const [label] = pair;
       const chip = document.createElement("span");
       chip.className = "dim" + (_NA.has(label) ? " na" : "");
-      chip.textContent = _DIM_EN[label] || label;
+      chip.textContent = trLabel(label);
       dims.append(chip);
     });
 
@@ -73,6 +95,6 @@ function renderImpact(el, impact) {
     el.textContent = "";
     return;
   }
-  el.textContent = "Force impact: " + impact.warnings.join(" · ");
+  el.textContent = "Force impact: " + impact.warnings.map(trWarning).join(" · ");
   el.classList.add("show");
 }

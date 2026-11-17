@@ -64,7 +64,7 @@ async function loadSets() {
   const sel = $("f-existing");
   sel.textContent = "";
   const def = document.createElement("option"); def.value = ""; def.textContent = "— load set —"; sel.append(def);
-  sets.forEach((s) => { const o = document.createElement("option"); o.value = s.set_id; o.textContent = s.name; sel.append(o); });
+  sets.forEach((s) => { const o = document.createElement("option"); o.value = s.set_id; o.textContent = s.name + (s.set_type && s.set_type !== "custom" ? " · " + s.set_type : ""); sel.append(o); });
   if (state.set) sel.value = state.set.set_id;
 }
 async function openSet(setId) {
@@ -102,6 +102,13 @@ function onGalaxyHover(cid, ev) {
   hc.classList.add("show");
 }
 
+// Same mapping as the server (timeline.slot_position): count -> index, duration -> elapsed/target.
+function slotPosFn(s) {
+  const n = s.slots.length;
+  if (s.mode === "duration" && s.target > 0) return (i) => Math.max(0, Math.min(1, (s.slots[i].start_time_s || 0) / s.target));
+  return (i) => (n <= 1 ? 0 : i / (n - 1));
+}
+
 // ---- render ----
 function render() {
   const s = state.set;
@@ -120,7 +127,7 @@ function render() {
   }
 
   if (s) {
-    drawCurve($("curve-svg"), s.curve_points, s.slots, energyOf);
+    drawCurve($("curve-svg"), s.curve_points, s.slots, energyOf, slotPosFn(s));
     drawTimeline($("timeline"), s.slots, state.selPos, selectSlot, titleOf, keyOf);
   } else {
     $("curve-svg").innerHTML = "";
@@ -194,25 +201,33 @@ async function renderSuggestionsPanel() {
   }
 }
 
-async function placeTrack(pos, cid, isAnchor) {
+const CONFLICT = {
+  duplicate_track: "Track already in this set.",
+  slot_protected: "Slot is anchored/forced.",
+};
+async function placeTrack(pos, cid, isAnchor, overwrite) {
   try {
-    await put(`/sets/${state.set.set_id}/slots/${pos}`, { content_id: cid, is_anchor: !!isAnchor });
+    await put(`/sets/${state.set.set_id}/slots/${pos}`, { content_id: cid, is_anchor: !!isAnchor, overwrite: !!overwrite });
     await openSet(state.set.set_id);
     state.selPos = pos; render(); renderSuggestionsPanel();
     toast("Track placed.");
   } catch (e) {
-    toast(apiMessage(e, { 404: "Slot or track not found." }, "Could not place track."), true);
+    if (e.status === 409 && e.detail === "slot_protected" && !overwrite
+        && confirm("This slot is anchored/forced. Overwrite it?")) return placeTrack(pos, cid, isAnchor, true);
+    toast(e.status === 409 && CONFLICT[e.detail] || apiMessage(e, { 404: "Slot or track not found." }, "Could not place track."), true);
   }
 }
-async function forceTrack(pos, cid) {
+async function forceTrack(pos, cid, overwrite) {
   try {
-    const res = await post(`/sets/${state.set.set_id}/slots/${pos}/force`, { content_id: cid });
+    const res = await post(`/sets/${state.set.set_id}/slots/${pos}/force`, { content_id: cid, overwrite: !!overwrite });
     state.set = await get("/sets/" + state.set.set_id);
     state.selPos = pos; render(); renderSuggestionsPanel();
     renderImpact($("impact"), res.impact);
     toast("Track forced.");
   } catch (e) {
-    toast(apiMessage(e, { 404: "Track not found in library." }, "Could not force track."), true);
+    if (e.status === 409 && e.detail === "slot_protected" && !overwrite
+        && confirm("This slot is anchored/forced. Overwrite it?")) return forceTrack(pos, cid, true);
+    toast(e.status === 409 && CONFLICT[e.detail] || apiMessage(e, { 404: "Track not found in library." }, "Could not force track."), true);
   }
 }
 async function clearSlot(pos) {
@@ -287,12 +302,13 @@ async function exportSet() {
 // ---- create / delete set ----
 async function createSet() {
   const mode = $("f-mode").value;
-  const target = parseFloat($("f-target").value);
   const nSlots = parseInt($("f-slots").value, 10);
+  // count mode: target == number of slots; duration mode: minutes -> seconds.
+  const target = mode === "duration" ? parseFloat($("f-target").value) * 60 : nSlots;
   const body = {
     name: $("f-name").value || "Set",
     mode, target, n_slots: nSlots,
-    curve_points: [[0, 2], [0.5, 9], [1, 4]],
+    set_type: $("f-type").value,
   };
   try {
     const { set_id } = await post("/sets", body);
@@ -329,9 +345,14 @@ function wire() {
   });
 
   initPlayer(titleOf, () => { if (state.libView) state.libView.render(); });
+  const syncMode = () => { $("f-target-wrap").hidden = $("f-mode").value !== "duration"; };
+  $("f-mode").addEventListener("change", syncMode); syncMode();
   $("btn-create").addEventListener("click", createSet);
   $("btn-delete").addEventListener("click", deleteSet);
   $("f-existing").addEventListener("change", (ev) => { if (ev.target.value) openSet(ev.target.value); });
+  const lv = $("lib-list"), topBtn = $("lib-top");
+  lv.addEventListener("scroll", () => { topBtn.hidden = lv.scrollTop < 400; });
+  topBtn.addEventListener("click", () => { lv.scrollTop = 0; });
   $("lib-search").addEventListener("input", (ev) => state.libView.setQuery(ev.target.value));
   $("btn-export").addEventListener("click", exportSet);
 

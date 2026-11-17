@@ -25,10 +25,10 @@ function _targetAt(points, pos) {
 }
 
 // slots: [{position, content_id}], realEnergyOf: (content_id) -> energy|null
-function drawCurve(svg, points, slots, realEnergyOf) {
+function drawCurve(svg, points, slots, realEnergyOf, posFn) {
   const n = slots.length;
   const x = (i) => CURVE_PAD + (n <= 1 ? 0 : (i / (n - 1)) * (CURVE_W - 2 * CURVE_PAD));
-  const posOf = (i) => (n <= 1 ? 0 : i / (n - 1));
+  const posOf = posFn || ((i) => (n <= 1 ? 0 : i / (n - 1)));
 
   const targetPts = [];
   for (let i = 0; i < n; i++) targetPts.push(`${x(i)},${_yFromEnergy(_targetAt(points, posOf(i)))}`);
