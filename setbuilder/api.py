@@ -7,20 +7,24 @@ routes délèguent aux couches métier (sets_repo, suggest, impact) et lisent
 
 from __future__ import annotations
 
+import json
+import logging
 import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
-from setbuilder.analyze import count_pending
+from setbuilder.analyze import ANALYSIS_VERSION, count_pending
 from setbuilder.analyze_job import (
     pid_alive,
     read_status,
@@ -29,9 +33,9 @@ from setbuilder.analyze_job import (
     write_status,
 )
 from setbuilder.analyze_launch import spawn_analyze
-from setbuilder.cache import apply_pragmas
+from setbuilder.cache import apply_pragmas, ensure_schema
 from setbuilder.export import backup_db, export_set
-from setbuilder.features_cache import open_features
+from setbuilder.features_cache import open_features, resolve_analysis_version
 from setbuilder.impact import ImpactReport, forced_impact
 from setbuilder.scoring import Candidate, ScoreBreakdown
 from setbuilder.sets_repo import (
@@ -71,13 +75,18 @@ def _next_filled(rec: SetRecord, pos: int, by_id: dict[str, Candidate]) -> Candi
     return None
 
 
+_Pt = tuple[Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)],
+            Annotated[float, Field(ge=0, le=10, allow_inf_nan=False)]]
+
+
 class SetCreate(BaseModel):
-    name: str
-    mode: str
-    target: float
-    curve_points: list[tuple[float, float]]
-    n_slots: int
-    analysis_version: str = "av1"
+    model_config = ConfigDict(str_strip_whitespace=True)
+    name: Annotated[str, StringConstraints(min_length=1, max_length=120)]
+    mode: Literal["count", "duration"]
+    target: Annotated[float, Field(gt=0, allow_inf_nan=False)]
+    curve_points: Annotated[list[_Pt], Field(min_length=1, max_length=64)]
+    n_slots: Annotated[int, Field(ge=1, le=200)]
+    analysis_version: str = ANALYSIS_VERSION
 
 
 class SlotUpdate(BaseModel):
@@ -110,6 +119,7 @@ def _require_set(conn: sqlite3.Connection, set_id: str) -> SetRecord:
     rec = get_set(conn, set_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="set introuvable")
+    rec.analysis_version = resolve_analysis_version(conn, rec.analysis_version)
     return rec
 
 
@@ -123,7 +133,10 @@ def _default_rb_provider():
     from pyrekordbox import Rekordbox6Database  # noqa: PLC0415
     from pyrekordbox.config import get_config  # noqa: PLC0415
 
-    db_dir = get_config("rekordbox6", "db_dir")
+    try:
+        db_dir = get_config("rekordbox6", "db_dir")
+    except Exception:  # KeyError si la config Rekordbox est absente
+        db_dir = None
     if not db_dir:
         db_dir = Path.home() / "Library" / "Pioneer" / "rekordbox"
     return str(db_dir), Rekordbox6Database
@@ -150,13 +163,46 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     status_path = status_path_for(db_path)
     analyze_lock = threading.Lock()
     app = FastAPI(title="setbuilder")
-    app.add_middleware(
-        CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
-    )
+    # Pas de CORS : le front est servi en même origine. Garde locale : l'Host doit être
+    # loopback (anti DNS-rebinding) et un Origin éventuel doit l'être aussi (anti CSRF,
+    # y compris les POST « simples » sans preflight comme POST /analyze).
+    _LOCAL = {"127.0.0.1", "localhost", "::1", "testserver"}
+
+    @app.middleware("http")
+    async def _local_only(request, call_next):
+        from urllib.parse import urlsplit  # noqa: PLC0415
+        try:
+            u = urlsplit("//" + (request.headers.get("host") or ""))
+            u.port  # noqa: B018 - lève ValueError si le port est invalide
+            host = u.hostname or ""
+        except ValueError:
+            host = ""
+        origin = request.headers.get("origin")
+        if host not in _LOCAL:
+            return JSONResponse(status_code=403, content={"detail": "hôte non autorisé"})
+        if origin and origin != "null":
+            try:
+                u = urlsplit(origin)
+                u.port  # noqa: B018
+                o_host = u.hostname or ""
+            except ValueError:
+                o_host = ""
+            if o_host not in {"127.0.0.1", "localhost", "::1", "testserver"}:
+                return JSONResponse(status_code=403, content={"detail": "origine non autorisée"})
+        elif origin == "null":
+            return JSONResponse(status_code=403, content={"detail": "origine non autorisée"})
+        return await call_next(request)
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error(_request, exc):
+        # Sans `input` : un NaN/inf dans le corps ferait échouer la sérialisation (500).
+        errs = [{"loc": list(e["loc"]), "msg": e["msg"], "type": e["type"]} for e in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": errs})
+
     conn = sqlite3.connect(db_path, check_same_thread=False)
     apply_pragmas(conn)  # WAL + busy_timeout : partage sûr du cache avec le sous-process d'analyse
     # Garantit que les tables du moteur existent, même sur une base ouverte
     # directement (les tables `tracks` viennent de cache.open_cache côté lib).
+    ensure_schema(conn)  # tracks (DB neuve)
     open_features(conn)  # features + galaxy
     open_sets(conn)      # sets + set_slots
     app.state.conn = conn
@@ -197,7 +243,18 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
 
     @app.get("/sets")
     def get_sets():
-        return [_serialize_set(conn, r) for r in list_sets(conn)]
+        out = []
+        for sid in [r[0] for r in conn.execute("SELECT set_id FROM sets ORDER BY created_at")]:
+            try:
+                out.append(_serialize_set(conn, _require_set(conn, sid)))
+                json.dumps(out[-1], allow_nan=False)
+            except Exception:
+                if out and out[-1].get("set_id") != sid:
+                    pass
+                elif out:
+                    out.pop()
+                logging.getLogger(__name__).warning("set %s illisible, ignoré", sid)
+        return out
 
     @app.get("/sets/{set_id}")
     def get_one_set(set_id: str):
@@ -214,6 +271,8 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
         rec = _require_set(conn, set_id)
         if not 0 <= pos < len(rec.slots):
             raise HTTPException(status_code=404, detail="slot hors bornes")
+        if conn.execute("SELECT 1 FROM tracks WHERE content_id = ?", (body.content_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="morceau introuvable dans la lib")
         place_track(conn, set_id, pos, body.content_id,
                     is_anchor=body.is_anchor, is_forced=body.is_forced)
         return _serialize_set(conn, _require_set(conn, set_id))["slots"][pos]
@@ -227,7 +286,7 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
         return {"ok": True}
 
     @app.get("/sets/{set_id}/slots/{pos}/suggestions")
-    def slot_suggestions(set_id: str, pos: int, limit: int = 20):
+    def slot_suggestions(set_id: str, pos: int, limit: int = Query(20, ge=1, le=100)):
         rec = _require_set(conn, set_id)
         if not 0 <= pos < len(rec.slots):
             raise HTTPException(status_code=404, detail="slot hors bornes")

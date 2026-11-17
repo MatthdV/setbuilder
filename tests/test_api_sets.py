@@ -36,6 +36,8 @@ def test_set_crud_via_api(tmp_path):
     rec = client.get(f"/sets/{sid}").json()
     assert len(rec["slots"]) == 3
 
+    client.app.state.conn.executemany("INSERT INTO tracks (content_id, title) VALUES (?, ?)", [("a", "a")])
+    client.app.state.conn.commit()
     client.put(f"/sets/{sid}/slots/0", json={"content_id": "a", "is_anchor": True})
     rec = client.get(f"/sets/{sid}").json()
     assert rec["slots"][0]["content_id"] == "a" and rec["slots"][0]["is_anchor"] is True
