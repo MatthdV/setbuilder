@@ -28,11 +28,13 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+let toastTimer = null;
 function toast(msg, isErr) {
   const t = $("toast");
+  clearTimeout(toastTimer);
   t.textContent = msg;
   t.className = "toast show" + (isErr ? " err" : "");
-  setTimeout(() => t.classList.remove("show"), 4000);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 4000);
 }
 
 const metaOf = (cid) => state.byId[cid] || null;
@@ -161,6 +163,7 @@ function clearCandidate() { setCandidate(null); if (state.libView) state.libView
 // ---- slot / suggestions ----
 async function selectSlot(pos) {
   state.selPos = pos;
+  renderImpact($("impact"), null);  // l'impact appartient au dernier force, pas à la sélection
   render();
   renderSuggestionsPanel();
 }
@@ -189,7 +192,6 @@ async function renderSuggestionsPanel() {
     p.textContent = "Could not load suggestions.";
     listEl.append(p);
   }
-  if (reqId === state.suggReq) renderImpact($("impact"), null);
 }
 
 async function placeTrack(pos, cid, isAnchor) {
