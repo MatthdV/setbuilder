@@ -9,6 +9,8 @@ DB="${DIR}.db"            # sibling cache: .../rekordbox/setbuilder.db
 PORT=8000
 URL="http://127.0.0.1:${PORT}/"
 
+is_setbuilder() { curl -s "$URL" 2>/dev/null | grep -q "<title>setbuilder</title>"; }
+
 open_app() {
   if [ -d "/Applications/Google Chrome.app" ]; then
     open -na "Google Chrome" --args --app="$URL" --new-window
@@ -22,9 +24,15 @@ open_app() {
 cd "$DIR"
 
 # Already running (e.g. started elsewhere)? Just open the window.
-if curl -s "$URL" >/dev/null 2>&1; then
+if is_setbuilder; then
   open_app
   exit 0
+fi
+
+if curl -s -o /dev/null "$URL" 2>/dev/null && ! is_setbuilder; then
+  MSG="Port ${PORT} is used by another service."
+  osascript -e "display alert \"setbuilder\" message \"$MSG\"" 2>/dev/null || echo "$MSG" >&2
+  exit 1
 fi
 
 if [ ! -x "$DIR/.venv/bin/python" ]; then
@@ -34,6 +42,6 @@ if [ ! -x "$DIR/.venv/bin/python" ]; then
 fi
 
 # Open the window as soon as the server answers, then run the server in front.
-( for i in {1..60}; do curl -s "$URL" >/dev/null 2>&1 && { open_app; break; }; sleep 0.25; done ) &
+( for i in {1..60}; do is_setbuilder && { open_app; break; }; sleep 0.25; done ) &
 
-exec "$DIR/.venv/bin/python" -c "import uvicorn; from setbuilder.api import create_app; uvicorn.run(create_app('$DB'), host='127.0.0.1', port=${PORT})"
+SETBUILDER_DB="$DB" SETBUILDER_PORT="$PORT" exec "$DIR/.venv/bin/python" -c 'import os, uvicorn; from setbuilder.api import create_app; uvicorn.run(create_app(os.environ["SETBUILDER_DB"]), host="127.0.0.1", port=int(os.environ["SETBUILDER_PORT"]))'
