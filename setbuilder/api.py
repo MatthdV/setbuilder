@@ -54,10 +54,18 @@ from setbuilder.sets_repo import (
     list_sets,
     open_sets,
     place_track,
+    rename_set,
 )
 from setbuilder.slot_context import build_slot_context, candidates_by_id
 from setbuilder.suggest import suggestions_for_slot
 from setbuilder.timeline import slot_start_times
+
+
+_Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+
+
+class NameBody(BaseModel):
+    name: _Name
 
 
 class ForceBody(BaseModel):
@@ -383,6 +391,12 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     def get_one_set(set_id: str):
         return _serialize_set(conn, _require_set(conn, set_id))
 
+    @app.patch("/sets/{set_id}")
+    def patch_set(set_id: str, body: NameBody):
+        _require_set(conn, set_id)
+        rename_set(conn, set_id, body.name)
+        return _serialize_set(conn, _require_set(conn, set_id))
+
     @app.delete("/sets/{set_id}")
     def del_set(set_id: str):
         _require_set(conn, set_id)
@@ -443,7 +457,7 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
         return {"slot": slot, "impact": _serialize_impact(report)}
 
     @app.post("/sets/{set_id}/export")
-    def export_rekordbox(set_id: str):
+    def export_rekordbox(set_id: str, body: NameBody | None = None):
         rec = _require_set(conn, set_id)
         content_ids = [s.content_id for s in rec.slots if s.content_id]
         if not content_ids:
@@ -475,7 +489,7 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
         db = None
         try:
             db = open_db()
-            result = export_set(db, rec.name, content_ids)
+            result = export_set(db, body.name if body else rec.name, content_ids)
         except HTTPException:
             raise
         except Exception as e:

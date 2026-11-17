@@ -163,6 +163,7 @@ function updateButtons() {
   $("btn-export").disabled = !hasSet;
   $("btn-export2").disabled = !hasSet || !state.set.slots.some((x) => x.content_id);
   $("btn-delete").disabled = !hasSet;
+  $("btn-rename").disabled = !hasSet;
   $("btn-place").disabled = !(hasSlot && hasCand);
   $("btn-force").disabled = !(hasSlot && hasCand);
   $("btn-clear-slot").disabled = !filledAtSel;
@@ -342,19 +343,64 @@ async function startAnalyze() {
   }
 }
 
+// ---- modal dialog (replaces confirm/prompt) ----
+// askDialog({title, text, label, value, ok}) -> Promise<string|null>. With `label` it shows a text
+// input (returns the trimmed value); without, it is a plain confirm (returns "" on OK).
+function askDialog({ title, text, label, value, ok }) {
+  return new Promise((resolve) => {
+    const dlg = $("dlg"), input = $("dlg-input");
+    $("dlg-title").textContent = title;
+    $("dlg-text").textContent = text || "";
+    $("dlg-label").textContent = label || "";
+    $("dlg-label").hidden = input.hidden = !label;
+    input.value = value || "";
+    $("dlg-ok").textContent = ok || "OK";
+    const done = () => {
+      dlg.removeEventListener("close", done);
+      resolve(dlg.returnValue === "ok" ? (label ? input.value.trim() : "") : null);
+    };
+    dlg.addEventListener("close", done);
+    dlg.returnValue = "cancel";
+    dlg.showModal();
+    if (label) { input.focus(); input.select(); }
+  });
+}
+
 // ---- export ----
 async function exportSet() {
   if (!state.set) { toast("No set loaded.", true); return; }
-  if (!confirm("Export to Rekordbox?\nRekordbox must be CLOSED. An automatic backup is made before writing.")) return;
+  const name = await askDialog({
+    title: "Export to Rekordbox",
+    text: "Rekordbox must be closed (the export refuses to run otherwise). A backup of master.db is made automatically before anything is written.",
+    label: "Playlist name", value: state.set.name, ok: "Export",
+  });
+  if (name === null) return;
+  if (!name) { toast("Give the playlist a name.", true); return; }
   try {
-    const r = await post(`/sets/${state.set.set_id}/export`);
+    const r = await post(`/sets/${state.set.set_id}/export`, { name });
     toast(`Exported to Rekordbox: playlist "${r.playlist}" (${r.n_tracks} tracks). Backup: ${r.backup}`);
   } catch (e) {
-    toast(apiMessage(e, {
+    const msg = apiMessage(e, {
       400: "Empty set: nothing to export.",
-      409: "Rekordbox is open — close it, then export again.",
+      409: "Rekordbox is running — quit it completely, then export again.",
+      422: "Invalid playlist name.",
       503: "Rekordbox extra missing (uv sync --extra rekordbox).",
-    }, "Export failed."), true);
+    }, null);
+    toast(msg || `Export failed (${e.status || "network"}${e.detail ? ": " + (typeof e.detail === "string" ? e.detail : "") : ""}).`, true);
+  }
+}
+
+async function renameSet() {
+  if (!state.set) return;
+  const name = await askDialog({ title: "Rename set", label: "Set name", value: state.set.name, ok: "Rename" });
+  if (!name) return;
+  try {
+    const rec = await _req("PATCH", `/sets/${state.set.set_id}`, { name });
+    state.set.name = rec.name;
+    await loadSets();
+    toast("Set renamed.");
+  } catch (e) {
+    toast(apiMessage(e, { 422: "Invalid name." }, "Could not rename set."), true);
   }
 }
 
@@ -420,6 +466,7 @@ function wire() {
   });
   $("btn-create").addEventListener("click", createSet);
   $("btn-delete").addEventListener("click", deleteSet);
+  $("btn-rename").addEventListener("click", renameSet);
   $("f-existing").addEventListener("change", (ev) => { if (ev.target.value) openSet(ev.target.value); });
   const lv = $("lib-list"), topBtn = $("lib-top");
   lv.addEventListener("scroll", () => { topBtn.hidden = lv.scrollTop < 400; });

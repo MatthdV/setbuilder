@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <noscript><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
-  <link rel="stylesheet" href="/static/tokens.css?v=17" />
-  <link rel="stylesheet" href="/static/app.css?v=17" />
+  <link rel="stylesheet" href="/static/tokens.css?v=18" />
+  <link rel="stylesheet" href="/static/app.css?v=18" />
 </head>
 <body>
   <div class="sheet">
@@ -46,6 +46,7 @@
           <div class="f"><span class="lbl">Load</span>
             <select id="f-existing"><option value="">— load set —</option></select>
           </div>
+          <button class="ghost" id="btn-rename" disabled>Rename</button>
           <button class="ghost" id="btn-delete" disabled>Delete set</button>
         </div>
 
@@ -128,17 +129,30 @@
     </div>
   </div>
 
+  <dialog id="dlg" class="dlg">
+    <form method="dialog" id="dlg-form">
+      <h3 id="dlg-title"></h3>
+      <p id="dlg-text"></p>
+      <label class="lbl" id="dlg-label" for="dlg-input"></label>
+      <input id="dlg-input" maxlength="120" autocomplete="off" />
+      <div class="dlg-row">
+        <button value="cancel" class="btn outline" id="dlg-cancel" formnovalidate>Cancel</button>
+        <button value="ok" class="btn" id="dlg-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
   <div class="hovercard" id="hovercard"></div>
   <div id="toast" class="toast"></div>
 
-  <script src="/static/player.js?v=17"></script>
-  <script src="/static/camelot.js?v=17"></script>
-  <script src="/static/curve.js?v=17"></script>
-  <script src="/static/timeline.js?v=17"></script>
-  <script src="/static/suggestions.js?v=17"></script>
-  <script src="/static/galaxy.js?v=17"></script>
-  <script src="/static/analyze.js?v=17"></script>
-  <script src="/static/library.js?v=17"></script>
-  <script src="/static/app.js?v=17"></script>
+  <script src="/static/player.js?v=18"></script>
+  <script src="/static/camelot.js?v=18"></script>
+  <script src="/static/curve.js?v=18"></script>
+  <script src="/static/timeline.js?v=18"></script>
+  <script src="/static/suggestions.js?v=18"></script>
+  <script src="/static/galaxy.js?v=18"></script>
+  <script src="/static/analyze.js?v=18"></script>
+  <script src="/static/library.js?v=18"></script>
+  <script src="/static/app.js?v=18"></script>
 </body>
 </html>

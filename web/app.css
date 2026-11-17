@@ -262,3 +262,14 @@ input, select { font: inherit; }
 /* a long title (player bar, candidate strip, ...) must never widen the library column */
 .left > *, .player, .sel-strip { min-width: 0; max-width: 100%; }
 .pl-title, .sel-strip .st-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* modal dialog (export / rename) */
+.dlg { border: 2px solid var(--ink); background: var(--bg); color: var(--ink); padding: 0; width: min(460px, 92vw); margin: auto; }
+.dlg::backdrop { background: rgba(0, 0, 0, .7); }
+.dlg form { padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.dlg h3 { font-family: var(--disp); font-weight: 900; text-transform: uppercase; font-size: 18px; }
+.dlg p { color: var(--dim); font-size: 12px; line-height: 1.5; }
+.dlg input { background: var(--box); border: 1px solid var(--dim); color: var(--ink); font-size: 15px; font-weight: 700; padding: 9px 10px; outline: none; }
+.dlg input:focus { border-color: var(--haz); }
+.dlg-row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
+.dlg input[hidden], .dlg label[hidden] { display: none; }
