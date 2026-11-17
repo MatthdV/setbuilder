@@ -82,3 +82,12 @@ def has_features(cache: sqlite3.Connection, content_id: str, analysis_version: s
         (content_id, analysis_version),
     ).fetchone()
     return row is not None
+
+
+def resolve_analysis_version(cache: sqlite3.Connection, stored: str) -> str:
+    """`stored` s'il a des features ; sinon la version la plus fournie (sets legacy)."""
+    if cache.execute("SELECT 1 FROM features WHERE analysis_version = ? LIMIT 1", (stored,)).fetchone():
+        return stored
+    row = cache.execute("SELECT analysis_version FROM features WHERE analysis_version IS NOT NULL "
+                        "GROUP BY analysis_version ORDER BY COUNT(*) DESC LIMIT 1").fetchone()
+    return row[0] if row else stored

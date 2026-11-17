@@ -41,6 +41,11 @@ def apply_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA synchronous=NORMAL")
 
 
+def ensure_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(_SCHEMA)
+    conn.commit()
+
+
 def open_cache(path: str) -> sqlite3.Connection:
     """Ouvre (ou crée) le cache et garantit que le schéma existe."""
     conn = sqlite3.connect(path)

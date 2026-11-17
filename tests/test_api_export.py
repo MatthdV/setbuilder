@@ -1,3 +1,4 @@
+import pytest
 import sqlite3
 
 from fastapi.testclient import TestClient
@@ -32,6 +33,8 @@ def _make_db(path):
     c.execute("CREATE TABLE galaxy (content_id TEXT PRIMARY KEY, umap_x REAL, umap_y REAL, umap_version TEXT)")
     open_features(c)
     open_sets(c)
+    for cid in ("a", "b", "c"):
+        c.execute("INSERT INTO tracks (content_id, title) VALUES (?, ?)", (cid, cid))
     c.commit()
     c.close()
 
@@ -182,3 +185,9 @@ def test_export_closes_db_on_failure(tmp_path):
     client.put(f"/sets/{sid}/slots/0", json={"content_id": "a"})
     assert client.post(f"/sets/{sid}/export").status_code == 500
     assert fake.closed is True
+
+
+@pytest.fixture(autouse=True)
+def _isolated_cwd(tmp_path, monkeypatch):
+    """backup_db écrit dans ./backups : ne pas polluer le repo."""
+    monkeypatch.chdir(tmp_path)
