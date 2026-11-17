@@ -142,3 +142,15 @@ def test_empty_db_endpoints_do_not_500(tmp_path):
     assert client.get("/library").json() == []
     assert client.get("/galaxy").json() == []
     assert client.get("/analyze/pending").json() == {"pending": 0, "total": 0}
+
+
+# --- sécurité locale : pas de CORS, pas de requête cross-origin -------------------
+
+def test_cross_origin_requests_rejected(tmp_path):
+    client = _client(tmp_path)
+    r = client.post("/analyze", headers={"Origin": "https://evil.example"})
+    assert r.status_code == 403
+    assert client.get("/library", headers={"Origin": "https://evil.example"}).status_code == 403
+    assert client.get("/library", headers={"Host": "evil.example"}).status_code == 403
+    assert "access-control-allow-origin" not in client.get("/library").headers
+    assert client.get("/library", headers={"Origin": "http://127.0.0.1:8000"}).status_code == 200
