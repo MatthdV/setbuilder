@@ -154,5 +154,6 @@ def test_cross_origin_requests_rejected(tmp_path):
     assert client.get("/library", headers={"Host": "evil.example"}).status_code == 403
     assert client.get("/library", headers={"Host": "[attacker.example]"}).status_code == 403
     assert client.get("/library", headers={"Host": "[::1]:8000"}).status_code == 200
+    assert client.get("/library", headers={"Origin": "http://[bad"}).status_code == 403
     assert "access-control-allow-origin" not in client.get("/library").headers
     assert client.get("/library", headers={"Origin": "http://127.0.0.1:8000"}).status_code == 200

@@ -179,7 +179,11 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
         if host not in _LOCAL:
             return JSONResponse(status_code=403, content={"detail": "hôte non autorisé"})
         if origin and origin != "null":
-            if (urlsplit(origin).hostname or "") not in {"127.0.0.1", "localhost", "::1", "testserver"}:
+            try:
+                o_host = urlsplit(origin).hostname or ""
+            except ValueError:
+                o_host = ""
+            if o_host not in {"127.0.0.1", "localhost", "::1", "testserver"}:
                 return JSONResponse(status_code=403, content={"detail": "origine non autorisée"})
         elif origin == "null":
             return JSONResponse(status_code=403, content={"detail": "origine non autorisée"})
