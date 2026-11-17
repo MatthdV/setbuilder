@@ -38,8 +38,8 @@ input, select { font: inherit; }
 .readout .exp .haz { height: 8px; width: 68px; background: repeating-linear-gradient(45deg, #0a0a09 0 6px, var(--haz) 6px 12px); }
 
 /* ---- body split ---- */
-.body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 430px; }
-.left { border-right: 2px solid var(--ink); min-width: 0; display: grid; grid-template-rows: auto auto auto auto minmax(0, 1fr); min-height: 0; }
+.body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 430px; }
+.left { border-right: 2px solid var(--ink); min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0, 1fr); min-height: 0; }
 
 /* command row */
 .cmd { display: flex; border-bottom: 2px solid var(--ink); flex-wrap: wrap; }
@@ -191,7 +191,7 @@ input, select { font: inherit; }
   .mast { grid-template-columns: 1fr; }
   .mast .readout { border-top: 2px solid var(--ink); }
   .readout { flex-wrap: wrap; }
-  .body { grid-template-columns: 1fr; }
+  .body { grid-template-columns: minmax(0, 1fr); }
   .left { border-right: 0; border-bottom: 2px solid var(--ink); grid-template-rows: auto auto auto auto auto; }
   .lib-viewport { height: 360px; }
   .right { overflow: visible; }
@@ -258,3 +258,7 @@ input, select { font: inherit; }
 .sh .st-x:hover { color: var(--haz); border-color: var(--haz); }
 .gleg [hidden] { display: none; }
 .gleg i { width: 14px; }
+
+/* a long title (player bar, candidate strip, ...) must never widen the library column */
+.left > *, .player, .sel-strip { min-width: 0; max-width: 100%; }
+.pl-title, .sel-strip .st-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
