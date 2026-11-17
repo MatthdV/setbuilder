@@ -237,3 +237,5 @@ input, select { font: inherit; }
 /* drag & drop target */
 .st.drop { outline: 2px dashed var(--haz); outline-offset: -2px; background: #1a0d0a; }
 .lrow[draggable="true"] { -webkit-user-drag: element; }
+
+.player input[type=range] { height: 22px; cursor: pointer; }
