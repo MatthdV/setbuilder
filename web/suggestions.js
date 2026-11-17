@@ -45,7 +45,15 @@ function renderSuggestions(listEl, breakdowns, titleOf, keyOf, onPlace) {
   }
   breakdowns.forEach((b) => {
     const card = document.createElement("div");
-    card.className = "sugg-card";
+    card.className = "sugg-card" + (typeof state !== "undefined" && state.candidateId === b.content_id ? " cand" : "")
+      + (typeof isPlaying === "function" && isPlaying(b.content_id) ? " playing" : "");
+    card.dataset.cid = b.content_id;
+    card.title = "Click to select this track (then Place / Force)";
+    card.addEventListener("click", () => {
+      if (typeof setCandidate === "function") setCandidate(b.content_id);
+      listEl.querySelectorAll(".sugg-card.cand").forEach((c) => c.classList.remove("cand"));
+      card.classList.add("cand");
+    });
 
     const head = document.createElement("div");
     head.className = "sugg-head";
@@ -76,11 +84,12 @@ function renderSuggestions(listEl, breakdowns, titleOf, keyOf, onPlace) {
     const place = document.createElement("button");
     place.className = "btn-sm";
     place.textContent = "Place";
-    place.addEventListener("click", () => onPlace(b.content_id));
+    place.addEventListener("click", (ev) => { ev.stopPropagation(); onPlace(b.content_id); });
     const pv = document.createElement("button");
     pv.className = "btn-sm pv";
+    pv.dataset.cid = b.content_id;
     pv.textContent = (typeof isPlaying === "function" && isPlaying(b.content_id)) ? "❚❚ Listen" : "▶ Listen";
-    pv.addEventListener("click", () => previewToggle(b.content_id));
+    pv.addEventListener("click", (ev) => { ev.stopPropagation(); if (typeof setCandidate === "function") setCandidate(b.content_id); previewToggle(b.content_id); });
     actions.append(pv, place);
 
     card.append(head, dims, actions);

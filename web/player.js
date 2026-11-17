@@ -53,6 +53,8 @@ function initPlayer(titleOf, onChange) {
   player.titleOf = titleOf; player.onChange = onChange;
   const a = player.audio, seek = document.getElementById("pl-seek");
   document.getElementById("pl-btn").addEventListener("click", () => { if (player.cid) previewToggle(player.cid); });
+  document.getElementById("pl-title").addEventListener("click", () => { if (player.cid && typeof locateTrack === "function") locateTrack(player.cid); });
+  document.getElementById("pl-place").addEventListener("click", () => { if (player.cid && typeof placePlaying === "function") placePlaying(player.cid); });
   document.getElementById("pl-stop").addEventListener("click", () => { a.pause(); a.removeAttribute("src"); player.cid = null; player.loadedCid = null; _renderPlayer(false); onChange(); });
   seek.addEventListener("input", () => { if (a.duration) a.currentTime = (seek.value / 1000) * a.duration; });
   a.addEventListener("timeupdate", () => {

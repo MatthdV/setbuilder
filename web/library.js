@@ -142,6 +142,12 @@ function createLibraryView(container, opts) {
       recompute();
       return { key: sortKey, dir: sortDir };
     },
+    // Find a track again: clear the filter, jump to it (centered) and select it.
+    reveal(id) {
+      query = ""; selectedId = id; recompute();
+      const i = view.findIndex((t) => t.content_id === id);
+      if (i >= 0) { container.scrollTop = Math.max(0, i * ROW_H - container.clientHeight / 2); render(); }
+    },
     setSelected,
     getSelectedId() { return selectedId; },
     getSelectedTrack() { return all.find((t) => t.content_id === selectedId) || null; },
