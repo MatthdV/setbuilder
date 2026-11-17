@@ -127,7 +127,7 @@ input, select { font: inherit; }
 .alert.show { display: block; }
 
 /* slots */
-.timeline { display: grid; grid-template-columns: repeat(4, 1fr); }
+.timeline { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .st { border-right: 1px solid var(--box); border-bottom: 1px solid var(--box); padding: 7px 9px; min-height: 56px; display: flex; flex-direction: column; gap: 5px; cursor: pointer; }
 .st:hover { background: #121210; }
 .st .co { font-size: 8.5px; letter-spacing: .09em; color: var(--faint); font-weight: 600; }
@@ -239,3 +239,17 @@ input, select { font: inherit; }
 .lrow[draggable="true"] { -webkit-user-drag: element; }
 
 .player input[type=range] { height: 22px; cursor: pointer; }
+
+/* slots must never widen the right column (long titles ellipsize) */
+.right { overflow-x: hidden; min-width: 0; }
+.st { min-width: 0; overflow: hidden; }
+.st .snm, .st .co { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sugg-card { min-width: 0; cursor: pointer; }
+.sugg-card.cand { outline: 2px solid var(--haz); outline-offset: -2px; }
+.sugg-card.playing { background: #14110f; }
+.pl-title { cursor: pointer; }
+.pl-title:hover { color: var(--haz); }
+.player .pl-place { width: auto; padding: 0 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.slots-export { display: block; width: 100%; border: 0; border-top: 2px solid var(--ink); background: var(--ink); color: #0a0a09; font-family: var(--disp); font-weight: 900; text-transform: uppercase; padding: 9px; letter-spacing: .04em; }
+.slots-export:hover:not(:disabled) { background: var(--haz); }
+.slots-export:disabled { background: var(--box); color: var(--faint); cursor: default; }

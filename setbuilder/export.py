@@ -28,6 +28,12 @@ def backup_db(db_directory: str, dest_root: str) -> str:
     os.makedirs(dest, exist_ok=True)
     shutil.copy2(master, os.path.join(dest, "master.db"))
 
+    # WAL/SHM : un master.db copié sans son -wal peut perdre les dernières modifs.
+    for suffix in ("-wal", "-shm"):
+        side = master + suffix
+        if os.path.isfile(side):
+            shutil.copy2(side, os.path.join(dest, "master.db" + suffix))
+
     playlists_xml = os.path.join(db_directory, "masterPlaylists6.xml")
     if os.path.isfile(playlists_xml):
         shutil.copy2(playlists_xml, os.path.join(dest, "masterPlaylists6.xml"))

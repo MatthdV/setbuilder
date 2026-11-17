@@ -147,6 +147,7 @@ function updateButtons() {
   const hasCand = !!state.candidateId;
   const filledAtSel = hasSlot && !!state.set.slots[state.selPos].content_id;
   $("btn-export").disabled = !hasSet;
+  $("btn-export2").disabled = !hasSet || !state.set.slots.some((x) => x.content_id);
   $("btn-delete").disabled = !hasSet;
   $("btn-place").disabled = !(hasSlot && hasCand);
   $("btn-force").disabled = !(hasSlot && hasCand);
@@ -246,6 +247,20 @@ async function quickPlace(t) {
   } finally { quickBusy = false; }
 }
 
+// Player bar: jump back to the track being listened to, selected as candidate.
+function locateTrack(cid) {
+  setCandidate(cid);
+  if (state.libView) state.libView.reveal(cid);
+  $("lib-search").value = "";
+}
+// Player bar "Place": into the selected slot if any, else the next empty slot.
+function placePlaying(cid) {
+  if (!state.set) { toast("Create or load a set first.", true); return; }
+  setCandidate(cid);
+  if (state.selPos != null) placeTrack(state.selPos, cid);
+  else quickPlace({ content_id: cid });
+}
+
 async function forceTrack(pos, cid, overwrite) {
   try {
     const res = await post(`/sets/${state.set.set_id}/slots/${pos}/force`, { content_id: cid, overwrite: !!overwrite });
@@ -318,11 +333,11 @@ async function exportSet() {
   if (!confirm("Export to Rekordbox?\nRekordbox must be CLOSED. An automatic backup is made before writing.")) return;
   try {
     const r = await post(`/sets/${state.set.set_id}/export`);
-    toast(`Playlist "${r.playlist}": ${r.n_tracks} tracks. Backup: ${r.backup}`);
+    toast(`Exported to Rekordbox: playlist "${r.playlist}" (${r.n_tracks} tracks). Backup: ${r.backup}`);
   } catch (e) {
     toast(apiMessage(e, {
       400: "Empty set: nothing to export.",
-      409: "Close Rekordbox and try again.",
+      409: "Rekordbox is open — close it, then export again.",
       503: "Rekordbox extra missing (uv sync --extra rekordbox).",
     }, "Export failed."), true);
   }
@@ -374,7 +389,11 @@ function wire() {
     },
   });
 
-  initPlayer(titleOf, () => { if (state.libView) state.libView.render(); });
+  initPlayer(titleOf, () => {
+    if (state.libView) state.libView.render();
+    document.querySelectorAll(".sugg-card").forEach((c) => c.classList.toggle("playing", isPlaying(c.dataset.cid)));
+    document.querySelectorAll(".btn-sm.pv").forEach((b) => { b.textContent = isPlaying(b.dataset.cid) ? "❚❚ Listen" : "▶ Listen"; });
+  });
   const syncMode = () => { $("f-target-wrap").hidden = $("f-mode").value !== "duration"; };
   $("f-mode").addEventListener("change", syncMode); syncMode();
   $("btn-create").addEventListener("click", createSet);
@@ -385,6 +404,7 @@ function wire() {
   topBtn.addEventListener("click", () => { lv.scrollTop = 0; });
   $("lib-search").addEventListener("input", (ev) => state.libView.setQuery(ev.target.value));
   $("btn-export").addEventListener("click", exportSet);
+  $("btn-export2").addEventListener("click", exportSet);
 
   // sortable headers
   document.querySelectorAll(".lhead span[data-sort]").forEach((h) => {

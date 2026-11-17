@@ -168,7 +168,13 @@ def _default_rb_provider():
         db_dir = None
     if not db_dir:
         db_dir = Path.home() / "Library" / "Pioneer" / "rekordbox"
-    return str(db_dir), Rekordbox6Database
+    master = str(Path(db_dir) / "master.db")
+
+    def open_db():
+        # path explicite : l'auto-détection de pyrekordbox échoue sur cette machine
+        return Rekordbox6Database(path=master)
+
+    return str(db_dir), open_db
 
 
 def _is_lock_error(exc: Exception) -> bool:
@@ -186,6 +192,7 @@ def _default_rekordbox_probe() -> bool:
 
 def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
                rekordbox_probe=None, preview_cache_dir=None) -> FastAPI:
+    default_rb = rb_provider is None  # le garde « Rekordbox ouvert » ne vaut que pour la vraie base
     rb_provider = rb_provider or _default_rb_provider
     analyze_launcher = analyze_launcher or spawn_analyze
     rekordbox_probe = rekordbox_probe or _default_rekordbox_probe
@@ -438,6 +445,8 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
         content_ids = [s.content_id for s in rec.slots if s.content_id]
         if not content_ids:
             raise HTTPException(status_code=400, detail="set vide : aucun morceau a exporter")
+        if default_rb and rekordbox_probe():
+            raise HTTPException(status_code=409, detail="ferme Rekordbox et reessaie")
 
         try:
             db_dir, open_db = rb_provider()

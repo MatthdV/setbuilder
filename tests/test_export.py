@@ -1,3 +1,4 @@
+import os
 import pytest
 
 from setbuilder.export import backup_db, export_set
@@ -83,3 +84,13 @@ def test_backup_also_copies_playlists_xml(tmp_path):
 def test_backup_missing_master_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         backup_db(str(tmp_path / "nope"), str(tmp_path / "b"))
+
+
+def test_backup_includes_wal_and_shm(tmp_path):
+    src = tmp_path / "rb"
+    src.mkdir()
+    (src / "master.db").write_text("DB")
+    (src / "master.db-wal").write_text("WAL")
+    (src / "master.db-shm").write_text("SHM")
+    dest = backup_db(str(src), str(tmp_path / "backups"))
+    assert (open(os.path.join(dest, "master.db-wal")).read(), open(os.path.join(dest, "master.db-shm")).read()) == ("WAL", "SHM")

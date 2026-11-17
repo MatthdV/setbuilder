@@ -191,3 +191,29 @@ def test_export_closes_db_on_failure(tmp_path):
 def _isolated_cwd(tmp_path, monkeypatch):
     """backup_db écrit dans ./backups : ne pas polluer le repo."""
     monkeypatch.chdir(tmp_path)
+
+
+def test_default_provider_opens_explicit_master_path(tmp_path, monkeypatch):
+    import pyrekordbox
+    import pyrekordbox.config as cfg
+
+    from setbuilder.api import _default_rb_provider
+
+    seen = {}
+    monkeypatch.setattr(cfg, "get_config", lambda *a, **k: str(tmp_path))
+    monkeypatch.setattr(pyrekordbox, "Rekordbox6Database", lambda **kw: seen.update(kw) or "DB")
+    db_dir, open_db = _default_rb_provider()
+    assert db_dir == str(tmp_path) and open_db() == "DB"
+    assert seen == {"path": str(tmp_path / "master.db")}
+
+
+def test_export_refused_when_rekordbox_running(tmp_path):
+    db = tmp_path / "setbuilder.db"
+    _make_db(str(db))
+    client = TestClient(create_app(str(db), rekordbox_probe=lambda: True))  # provider par défaut
+    sid = client.post("/sets", json={"name": "x", "mode": "count", "target": 3, "n_slots": 3,
+                                     "set_type": "main"}).json()["set_id"]
+    client.put(f"/sets/{sid}/slots/0", json={"content_id": "a"})
+    r = client.post(f"/sets/{sid}/export")
+    assert r.status_code == 409
+    assert not (tmp_path / "backups").exists()
