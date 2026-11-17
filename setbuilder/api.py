@@ -166,16 +166,19 @@ def create_app(db_path: str, *, rb_provider=None, analyze_launcher=None,
     # Pas de CORS : le front est servi en même origine. Garde locale : l'Host doit être
     # loopback (anti DNS-rebinding) et un Origin éventuel doit l'être aussi (anti CSRF,
     # y compris les POST « simples » sans preflight comme POST /analyze).
-    _LOCAL = {"127.0.0.1", "localhost", "[::1]", "testserver"}
+    _LOCAL = {"127.0.0.1", "localhost", "::1", "testserver"}
 
     @app.middleware("http")
     async def _local_only(request, call_next):
-        host = (request.headers.get("host") or "").rsplit(":", 1)[0] if not (request.headers.get("host") or "").startswith("[") else "[::1]"
+        from urllib.parse import urlsplit  # noqa: PLC0415
+        try:
+            host = urlsplit("//" + (request.headers.get("host") or "")).hostname or ""
+        except ValueError:
+            host = ""
         origin = request.headers.get("origin")
         if host not in _LOCAL:
             return JSONResponse(status_code=403, content={"detail": "hôte non autorisé"})
         if origin and origin != "null":
-            from urllib.parse import urlsplit  # noqa: PLC0415
             if (urlsplit(origin).hostname or "") not in {"127.0.0.1", "localhost", "::1", "testserver"}:
                 return JSONResponse(status_code=403, content={"detail": "origine non autorisée"})
         elif origin == "null":
