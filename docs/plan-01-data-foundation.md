@@ -14,7 +14,7 @@
 - master.db : **lecture seule** dans ce plan ; aucun write. Rekordbox fermé pour toute lecture pyrekordbox.
 - Cache `setbuilder.db` **séparé**, keyé par content ID Rekordbox (string stable). Jamais de schéma dans master.db.
 - Jamais de suppression de fichier.
-- Fallback normalisation **NFC puis NFD** pour résoudre les chemins sur FAT32 (MATTH 256) — bug connu documenté.
+- Fallback normalisation **NFC puis NFD** pour résoudre les chemins sur FAT32 (clé USB) — bug connu documenté.
 - App locale, mono-poste, pas de réseau.
 - Emplacement projet : `~/Documents/rekordbox/setbuilder/` (co-localisé avec l'outillage rekordbox existant).
 

@@ -1,8 +1,7 @@
 # Set Builder — Document de conception
 
-> Projet dérivé de [[dj-hotcues]]. Outil perso de préparation de sets DJ sur la librairie
-> Rekordbox de Matthieu. Design validé en brainstorming le 2026-11-03.
-> Calibré en partie sur le teardown de DaJent ([[dajent-teardown]]), **à usage strictement personnel**.
+> Outil perso de préparation de sets DJ sur la librairie Rekordbox de Matthieu.
+> Design validé en brainstorming le 2026-11-03.
 
 ## 1. Intention & pourquoi
 
@@ -45,11 +44,11 @@ en lui donnant une base solide dont il peut s'écarter.
   `pyrekordbox` 0.4.4 (`Rekordbox6Database`). ~4136 morceaux. Rekordbox **doit être fermé** pour tout write.
 - **Déjà disponible par morceau** : BPM, key (Camelot), My Tags (Moment: Warm-up/Building/Main/Peak/After,
   Ambiance, Session), ColorID, cues/phrases, `file_path`.
-- **Fichiers audio** sur la clé USB **MATTH 256** (FAT32) — l'analyse audio doit résoudre `file_path`
+- **Fichiers audio** sur une clé USB externe (FAT32) — l'analyse audio doit résoudre `file_path`
   vers le volume monté ; gérer l'absence de la clé (lib montée ou pas).
 - **Pas d'embeddings ni de mood/energy ML** dans Rekordbox → à générer (voir §4.2), une fois, en batch.
 - Sécurité : **jamais de suppression**, backup auto de master.db avant chaque write (pattern djcues/reorg déjà en place).
-- Bug connu FAT32 NFC/NFD sur MATTH 256 (cf. [[dj-hotcues]]) → réutiliser le fallback de normalisation existant.
+- Bug connu FAT32 NFC/NFD sur la clé USB → réutiliser le fallback de normalisation existant.
 
 ## 4. Comment c'est fait (décisions prises)
 
@@ -61,10 +60,10 @@ Application **web locale mono-poste** :
 - Stockage des features calculées dans une **base locale séparée** (SQLite `setbuilder.db`), **jamais dans master.db**,
   indexée par un ID stable Rekordbox (content ID). master.db reste lu seul, écrit seulement à l'export.
 
-### 4.2 Pipeline d'analyse (le gros morceau) — *(décidé avec Matthieu, archi DaJent)*
-Passe batch unique sur les ~4136 morceaux, résultats en cache dans `setbuilder.db`. **Deux modèles** (comme DaJent) :
+### 4.2 Pipeline d'analyse (le gros morceau) — *(décidé avec Matthieu)*
+Passe batch unique sur les ~4136 morceaux, résultats en cache dans `setbuilder.db`. **Deux modèles** :
 - **Embedding de vibe** (pour la Galaxy + dimension "proximité de son") : **MuQ** (poids open Hugging Face, PyTorch) →
-  un vecteur par morceau. C'est lui qui porte la similarité de vibe (le point fort de DaJent).
+  un vecteur par morceau. C'est lui qui porte la similarité de vibe.
 - **Genre + mood + énergie** : **Essentia `discogs-effnet-bs64`** (TensorFlow, CPU) → têtes MTG
   (`mood_happy/sad/party/relaxed/aggressive`) + `valence`/`arousal` + genre multi-label
   → **energy_score 1-10** (formule combinant arousal + énergie spectrale, versionnée).
@@ -111,11 +110,11 @@ Set fini → **playlist Rekordbox ordonnée** écrite dans master.db via pyrekor
 - Gestion fine clé USB absente (mode dégradé lecture seule des features en cache).
 
 ## 6. Décisions résolues (builder-check du 2026-11-03)
-- **Moteur son** : MuQ (vibe) + EffNet (genre/mood) — archi DaJent. *(choix Matthieu)*
+- **Moteur son** : MuQ (vibe) + EffNet (genre/mood). *(choix Matthieu)*
 - **Périmètre** : suggestions + galaxy sur **toute la lib**, filtres optionnels. *(choix Matthieu)*
 - **Modèle de set** : **flexible**, durée OU nombre de morceaux par set. *(choix Matthieu)*
 - **Hébergement** : **local Mac** d'abord, archi prête pour l'hybride VPS en phase 2. *(choix Matthieu)*
-- **Couverture audio** : analyse depuis MATTH 256 (lib complète) ; morceaux introuvables = grisés galaxy /
+- **Couverture audio** : analyse depuis la clé USB (lib complète) ; morceaux introuvables = grisés galaxy /
   hors suggestions, jamais bloquants. *(mon choix)*
 - **Essentia + MuQ sur Apple Silicon** : ✅ **VÉRIFIÉ par spike le 2026-11-03** (voir §9).
 - **Export** : réutilise le write-path prouvé de `reorg_2026_09.py` (backup → create_playlist → add_to_playlist
