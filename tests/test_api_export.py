@@ -217,3 +217,31 @@ def test_export_refused_when_rekordbox_running(tmp_path):
     r = client.post(f"/sets/{sid}/export")
     assert r.status_code == 409
     assert not (tmp_path / "backups").exists()
+
+
+def test_export_uses_custom_name_and_validates(tmp_path):
+    fake = _FakeRB()
+    rbdir = _rb_dir_with_master(tmp_path)
+    client = _client(tmp_path, lambda: (str(rbdir), lambda: fake))
+    sid = client.post("/sets", json={"name": "Set A", "mode": "count", "target": 3, "n_slots": 3,
+                                     "set_type": "main"}).json()["set_id"]
+    client.put(f"/sets/{sid}/slots/0", json={"content_id": "a"})
+    assert client.post(f"/sets/{sid}/export", json={"name": "   "}).status_code == 422
+    assert client.post(f"/sets/{sid}/export", json={"name": "x" * 121}).status_code == 422
+    r = client.post(f"/sets/{sid}/export", json={"name": "  Friday Warm-up  "})
+    assert r.status_code == 200 and r.json()["playlist"] == "Friday Warm-up"
+    assert fake.calls[0] == ("create", "Friday Warm-up")
+    # sans corps : nom du set
+    r = client.post(f"/sets/{sid}/export")
+    assert r.json()["playlist"] == "Set A"
+
+
+def test_rename_set(tmp_path):
+    client = _client(tmp_path, lambda: ("x", lambda: None))
+    sid = client.post("/sets", json={"name": "Old", "mode": "count", "target": 3, "n_slots": 3,
+                                     "set_type": "main"}).json()["set_id"]
+    r = client.patch(f"/sets/{sid}", json={"name": "  Closing Night 🎧 "})
+    assert r.status_code == 200 and r.json()["name"] == "Closing Night 🎧"
+    assert client.get(f"/sets/{sid}").json()["name"] == "Closing Night 🎧"
+    assert client.patch(f"/sets/{sid}", json={"name": ""}).status_code == 422
+    assert client.patch("/sets/nope", json={"name": "x"}).status_code == 404

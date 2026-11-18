@@ -115,6 +115,11 @@ def list_sets(cache: sqlite3.Connection) -> list[SetRecord]:
     return [get_set(cache, sid) for sid in ids]
 
 
+def rename_set(cache: sqlite3.Connection, set_id: str, name: str) -> None:
+    cache.execute("UPDATE sets SET name = ? WHERE set_id = ?", (name, set_id))
+    cache.commit()
+
+
 def delete_set(cache: sqlite3.Connection, set_id: str) -> None:
     cache.execute("DELETE FROM set_slots WHERE set_id = ?", (set_id,))
     cache.execute("DELETE FROM sets WHERE set_id = ?", (set_id,))
